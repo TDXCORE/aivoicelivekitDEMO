@@ -99,10 +99,12 @@ class TDXSDRBot(Agent):
                 instructions=f"Say this greeting exactly and wait for response: '{greeting_msg}'"
             )
         else:
-            # For outbound calls, wait for user to speak first
-            logger.info("Outbound call - waiting for user to speak first...")
+            # For outbound calls, greet immediately after connection
+            greeting_msg = f"¡Hola! Habla María de TDX. ¿Cómo está? Estoy llamando porque TDX está ayudando a empresas como {self.company_name} a transformar sus operaciones con inteligencia artificial. ¿Tiene un minuto para platicar?"
+            
+            logger.info("Sending initial greeting for outbound call...")
             await ctx.session.generate_reply(
-                instructions="Wait silently for the user to speak first. When they say hello or any greeting, respond with: '¡Hola! Habla María de TDX. ¿Cómo está? Estoy llamando porque TDX está ayudando a empresas a transformar sus operaciones con inteligencia artificial. ¿Tiene un minuto para platicar?'"
+                instructions=f"Say this greeting exactly and wait for response: '{greeting_msg}'"
             )
 
     async def hangup(self):
@@ -241,10 +243,13 @@ async def entrypoint(ctx: JobContext):
     if not phone_number and ctx.room.name.startswith("call-"):
         phone_number = "+" + ctx.room.name.replace("call-", "")
     
-    # Determine call direction - inbound calls have phone number in room name
-    call_direction = metadata.get("call_direction", "inbound")
-    if ctx.room.name.startswith("call-"):
-        call_direction = "inbound"  # Room created by dispatch rule for inbound calls
+    # Determine call direction based on metadata or room pattern
+    call_direction = metadata.get("call_direction", "outbound")
+    # If room matches outbound pattern (simple call-NUMBER), it's outbound
+    if ctx.room.name.startswith("call-") and not "_" in ctx.room.name:
+        call_direction = "outbound"  # Simple pattern = outbound call from script
+    elif ctx.room.name.startswith("call-") and "_" in ctx.room.name:
+        call_direction = "inbound"   # Complex pattern = inbound dispatch rule
     
     participant_identity = phone_number or "unknown"
     company_name = prospect_info.get("company_name", "Unknown Company")
