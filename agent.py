@@ -348,15 +348,16 @@ async def entrypoint(ctx: JobContext):
     )
 
     # Use OpenAI Realtime API with Semantic VAD for better conversation flow
+    from livekit.plugins.openai.realtime.realtime_model import SemanticVadOptions, SemanticVadEagerness
+    
     session = AgentSession(
         llm=openai.realtime.RealtimeModel(
             model="gpt-4o-realtime-preview",
             voice="alloy",
             temperature=0.7,  # Better for conversation
             # Semantic VAD for improved turn detection and interruption handling
-            turn_detection=openai.realtime.TurnDetection(
-                type="semantic_vad",
-                eagerness="medium",  # Balanced conversation flow
+            turn_detection=SemanticVadOptions(
+                eagerness=SemanticVadEagerness.AUTO,  # Balanced conversation flow
                 create_response=True,
                 interrupt_response=True
             )
