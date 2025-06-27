@@ -38,6 +38,7 @@ class TDXSDRBot(Agent):
         contact_name: str,
         prospect_info: dict[str, Any],
         dial_info: dict[str, Any],
+        call_direction: str = "inbound",
     ):
         super().__init__(
             instructions=f"""
@@ -79,9 +80,30 @@ class TDXSDRBot(Agent):
         self.prospect_info = prospect_info
         self.company_name = company_name
         self.contact_name = contact_name
+        self.call_direction = call_direction
 
     def set_participant(self, participant: rtc.RemoteParticipant):
         self.participant = participant
+
+    async def on_session_start(self, ctx: RunContext):
+        """Called when agent session starts - handle greeting based on call direction"""
+        logger.info(f"Agent session started, call direction: {self.call_direction}")
+        await asyncio.sleep(2)  # Wait for connection to stabilize
+        
+        if self.call_direction == "inbound":
+            # For inbound calls, greet immediately
+            greeting_msg = f"¡Hola! Habla María de TDX. ¿Cómo está? Estoy llamando porque TDX está ayudando a empresas como {self.company_name} a transformar sus operaciones con inteligencia artificial. ¿Tiene un minuto para platicar?"
+            
+            logger.info("Sending initial greeting for inbound call...")
+            await ctx.session.generate_reply(
+                instructions=f"Say this greeting exactly and wait for response: '{greeting_msg}'"
+            )
+        else:
+            # For outbound calls, wait for user to speak first
+            logger.info("Outbound call - waiting for user to speak first...")
+            await ctx.session.generate_reply(
+                instructions="Wait silently for the user to speak first. When they say hello or any greeting, respond with: '¡Hola! Habla María de TDX. ¿Cómo está? Estoy llamando porque TDX está ayudando a empresas a transformar sus operaciones con inteligencia artificial. ¿Tiene un minuto para platicar?'"
+            )
 
     async def hangup(self):
         """Helper function to hang up the call by deleting the room"""
@@ -219,6 +241,11 @@ async def entrypoint(ctx: JobContext):
     if not phone_number and ctx.room.name.startswith("call-"):
         phone_number = "+" + ctx.room.name.replace("call-", "")
     
+    # Determine call direction - inbound calls have phone number in room name
+    call_direction = metadata.get("call_direction", "inbound")
+    if ctx.room.name.startswith("call-"):
+        call_direction = "inbound"  # Room created by dispatch rule for inbound calls
+    
     participant_identity = phone_number or "unknown"
     company_name = prospect_info.get("company_name", "Unknown Company")
     contact_name = prospect_info.get("contact_name", "there")
@@ -229,13 +256,14 @@ async def entrypoint(ctx: JobContext):
         contact_name=contact_name,
         prospect_info=prospect_info,
         dial_info=dial_info,
+        call_direction=call_direction,
     )
 
     # Use OpenAI Realtime API for speech-to-speech with optimized settings
     session = AgentSession(
         llm=openai.realtime.RealtimeModel(
             model="gpt-4o-realtime-preview",
-            voice="nova",  # Changed to nova for clearer voice
+            voice="alloy",  # Using valid OpenAI voice option
             temperature=0.5,  # Lower temperature for more consistent responses
         )
     )
@@ -257,6 +285,9 @@ async def entrypoint(ctx: JobContext):
         participant = await ctx.wait_for_participant()
         logger.info(f"participant joined: {participant.identity}")
         agent.set_participant(participant)
+        
+        # The greeting will be triggered automatically by on_session_start method
+        
     except Exception as e:
         logger.error(f"error waiting for participant: {e}")
         ctx.shutdown()
