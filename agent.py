@@ -148,8 +148,8 @@ Reglas Claras: Las reglas de interacción (una pregunta a la vez, esperar respue
         logger.info(f"👤 Contact: {self.contact_name}")
         
         try:
-            logger.info("⏳ Waiting 2 seconds for connection to stabilize...")
-            await asyncio.sleep(2)  # Shorter wait for better responsiveness
+            logger.info("⏳ Waiting 1 second for connection to stabilize...")
+            await asyncio.sleep(1)  # Faster response time for better user experience
             
             # Always greet immediately for both inbound and outbound
             greeting_msg = f"¡Hola! Habla María de TDX. ¿Cómo está? Estoy llamando porque TDX está ayudando a empresas como {self.company_name} a transformar sus operaciones con inteligencia artificial. ¿Tiene un minuto para platicar?"
@@ -347,20 +347,12 @@ async def entrypoint(ctx: JobContext):
         call_direction=call_direction,
     )
 
-    # Use OpenAI Realtime API with Semantic VAD for better conversation flow
-    from livekit.plugins.openai.realtime.realtime_model import SemanticVadOptions, SemanticVadEagerness
-    
+    # Use OpenAI Realtime API with basic configuration (version compatibility)
     session = AgentSession(
         llm=openai.realtime.RealtimeModel(
             model="gpt-4o-realtime-preview",
             voice="alloy",
-            temperature=0.7,  # Better for conversation
-            # Semantic VAD for improved turn detection and interruption handling
-            turn_detection=SemanticVadOptions(
-                eagerness=SemanticVadEagerness.AUTO,  # Balanced conversation flow
-                create_response=True,
-                interrupt_response=True
-            )
+            temperature=0.8,  # Increased for more natural conversation
         )
     )
 
