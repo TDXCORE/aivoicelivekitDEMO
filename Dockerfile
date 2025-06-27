@@ -26,5 +26,5 @@ USER appuser
 # Expose port (Render uses PORT environment variable)
 EXPOSE ${PORT:-8000}
 
-# Run the application
-CMD ["python", "agent.py"]
+# Run the application - download models first then start
+CMD ["sh", "-c", "python agent.py download-files && python agent.py start"]
