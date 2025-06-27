@@ -237,9 +237,7 @@ async def entrypoint(ctx: JobContext):
             model="gpt-4o-realtime-preview",
             voice="nova",  # Changed to nova for clearer voice
             temperature=0.5,  # Lower temperature for more consistent responses
-        ),
-        # Add audio optimizations
-        chat_ctx=None,  # Disable chat context to save memory
+        )
     )
 
     # Start session
