@@ -70,6 +70,8 @@ Desarrollo de un agente de voz SDR inteligente para TDX (empresa de tecnología 
 - [X] Configurar .gitignore para seguridad ✅
 - [X] Crear módulo MS Teams integration ✅
 - [X] Preparar archivos para Render (Procfile, Dockerfile) ✅
+- [X] Deploy exitoso en Render con variables de entorno ✅
+- [X] Corregir descarga de modelos turn-detector ✅
 
 ---
 
