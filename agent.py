@@ -347,21 +347,12 @@ async def entrypoint(ctx: JobContext):
         call_direction=call_direction,
     )
 
-    # Use OpenAI Realtime API with proper telephony configuration
-    from livekit.agents.openai.realtime import TurnDetection
-    
+    # Use OpenAI Realtime API with basic configuration
     session = AgentSession(
         llm=openai.realtime.RealtimeModel(
             model="gpt-4o-realtime-preview",
             voice="alloy",
             temperature=0.7,  # Better for conversation
-            # Semantic VAD for better telephony conversation flow
-            turn_detection=TurnDetection(
-                type="semantic_vad",
-                eagerness="auto",  # Balanced conversation flow
-                create_response=True,
-                interrupt_response=True
-            )
         )
     )
 
@@ -374,18 +365,13 @@ async def entrypoint(ctx: JobContext):
         try:
             await ctx.connect()
             
-            # Create SIP participant for outbound call with conversation-friendly settings
+            # Create SIP participant for outbound call
             sip_participant = await ctx.api.sip.create_sip_participant(
                 api.CreateSIPParticipantRequest(
                     room_name=ctx.room.name,
                     sip_trunk_id=os.getenv("SIP_OUTBOUND_TRUNK_ID"),
                     sip_call_to=outbound_phone,
                     participant_identity=f"sip_{outbound_phone.replace('+', '')}",
-                    wait_until_answered=True,
-                    # Disable answering machine detection for better conversation flow
-                    enable_answering_machine_detection=False,
-                    # Increase call timeout for longer conversations
-                    call_timeout=300,  # 5 minutes
                 )
             )
             logger.info(f"SIP participant created: {sip_participant.participant_identity}")
