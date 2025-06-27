@@ -8,20 +8,9 @@ import subprocess
 import sys
 
 def main():
-    print("Downloading LiveKit agent models...")
+    print("Starting TDX SDR Bot (skipping model download for memory optimization)...")
     
-    # Download models
-    result = subprocess.run([
-        sys.executable, "agent.py", "download-files"
-    ], capture_output=True, text=True)
-    
-    if result.returncode != 0:
-        print(f"Model download failed: {result.stderr}")
-        sys.exit(1)
-    
-    print("Starting TDX SDR Bot...")
-    
-    # Start agent
+    # Start agent directly without downloading models
     subprocess.run([
         sys.executable, "agent.py", "start"
     ])

@@ -19,14 +19,7 @@ from livekit.agents import (
     WorkerOptions,
     RoomInputOptions,
 )
-from livekit.plugins import (
-    deepgram,
-    openai,
-    cartesia,
-    silero,
-    noise_cancellation,
-)
-from livekit.plugins.turn_detector.english import EnglishModel
+from livekit.plugins import openai
 
 # Load environment variables
 load_dotenv(dotenv_path=".env.local")
@@ -216,8 +209,6 @@ async def entrypoint(ctx: JobContext):
 
     # Use OpenAI Realtime API for speech-to-speech
     session = AgentSession(
-        turn_detection=EnglishModel(),
-        vad=silero.VAD.load(),
         llm=openai.realtime.RealtimeModel(
             model="gpt-4o-realtime-preview",
             voice="alloy",
@@ -231,9 +222,6 @@ async def entrypoint(ctx: JobContext):
         session.start(
             agent=agent,
             room=ctx.room,
-            room_input_options=RoomInputOptions(
-                noise_cancellation=noise_cancellation.BVCTelephony(),
-            ),
         )
     )
 
