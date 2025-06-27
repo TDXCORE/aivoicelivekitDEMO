@@ -26,9 +26,5 @@ USER appuser
 # Expose port (Render uses PORT environment variable)
 EXPOSE ${PORT:-8000}
 
-# Copy and make start script executable
-COPY start.sh /app/start.sh
-RUN chmod +x /app/start.sh
-
-# Run the start script
-CMD ["/app/start.sh"]
+# Run the startup script
+CMD ["python", "startup.py"]
