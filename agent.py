@@ -235,31 +235,18 @@ async def entrypoint(ctx: JobContext):
         )
     )
 
-    # Create SIP participant for outbound calls if phone number exists
-    if phone_number and outbound_trunk_id:
-        try:
-            logger.info(f"Creating SIP participant for {phone_number} using trunk {outbound_trunk_id}")
-            await ctx.api.sip.create_sip_participant(
-                api.CreateSIPParticipantRequest(
-                    room_name=ctx.room.name,
-                    sip_trunk_id=outbound_trunk_id,
-                    sip_call_to=phone_number,
-                    participant_identity=participant_identity,
-                    wait_until_answered=True,
-                )
-            )
-
-            await session_started
-            participant = await ctx.wait_for_participant(identity=participant_identity)
-            logger.info(f"participant joined: {participant.identity}")
-            agent.set_participant(participant)
-
-        except api.TwirpError as e:
-            logger.error(f"error creating SIP participant: {e.message}")
-            ctx.shutdown()
-    else:
-        logger.info("Waiting for inbound SIP call...")
-        await session_started
+    # For inbound calls, wait for SIP participant to join
+    logger.info("Waiting for inbound SIP call...")
+    await session_started
+    
+    # Wait for participant to join (should happen automatically for inbound calls)
+    try:
+        participant = await ctx.wait_for_participant()
+        logger.info(f"participant joined: {participant.identity}")
+        agent.set_participant(participant)
+    except Exception as e:
+        logger.error(f"error waiting for participant: {e}")
+        ctx.shutdown()
 
 if __name__ == "__main__":
     cli.run_app(
