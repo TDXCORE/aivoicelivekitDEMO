@@ -26,7 +26,7 @@ load_dotenv(dotenv_path=".env.local")
 logger = logging.getLogger("tdx-sdr-bot")
 logger.setLevel(logging.INFO)
 
-outbound_trunk_id = os.getenv("SIP_OUTBOUND_TRUNK_ID")
+outbound_trunk_id = os.getenv("SIP_OUTBOUND_TRUNK_ID", "ST_G24Bo8JH4iy7")
 
 class TDXSDRBot(Agent):
     def __init__(
@@ -191,11 +191,22 @@ async def entrypoint(ctx: JobContext):
     await ctx.connect()
 
     # Parse metadata
-    metadata = json.loads(ctx.job.metadata)
+    metadata = {}
+    if ctx.job.metadata:
+        try:
+            metadata = json.loads(ctx.job.metadata)
+        except json.JSONDecodeError:
+            logger.warning("Invalid metadata JSON, using defaults")
+    
     dial_info = metadata.get("dial_info", {})
     prospect_info = metadata.get("prospect_info", {})
     
-    participant_identity = phone_number = dial_info["phone_number"]
+    # Extract phone number from room name if not in metadata
+    phone_number = dial_info.get("phone_number")
+    if not phone_number and ctx.room.name.startswith("call-"):
+        phone_number = "+" + ctx.room.name.replace("call-", "")
+    
+    participant_identity = phone_number or "unknown"
     company_name = prospect_info.get("company_name", "Unknown Company")
     contact_name = prospect_info.get("contact_name", "there")
 
@@ -225,26 +236,31 @@ async def entrypoint(ctx: JobContext):
         )
     )
 
-    # Create SIP participant for outbound calls
-    try:
-        await ctx.api.sip.create_sip_participant(
-            api.CreateSIPParticipantRequest(
-                room_name=ctx.room.name,
-                sip_trunk_id=outbound_trunk_id,
-                sip_call_to=phone_number,
-                participant_identity=participant_identity,
-                wait_until_answered=True,
+    # Create SIP participant for outbound calls if phone number exists
+    if phone_number and outbound_trunk_id:
+        try:
+            logger.info(f"Creating SIP participant for {phone_number} using trunk {outbound_trunk_id}")
+            await ctx.api.sip.create_sip_participant(
+                api.CreateSIPParticipantRequest(
+                    room_name=ctx.room.name,
+                    sip_trunk_id=outbound_trunk_id,
+                    sip_call_to=phone_number,
+                    participant_identity=participant_identity,
+                    wait_until_answered=True,
+                )
             )
-        )
 
+            await session_started
+            participant = await ctx.wait_for_participant(identity=participant_identity)
+            logger.info(f"participant joined: {participant.identity}")
+            agent.set_participant(participant)
+
+        except api.TwirpError as e:
+            logger.error(f"error creating SIP participant: {e.message}")
+            ctx.shutdown()
+    else:
+        logger.info("Waiting for inbound SIP call...")
         await session_started
-        participant = await ctx.wait_for_participant(identity=participant_identity)
-        logger.info(f"participant joined: {participant.identity}")
-        agent.set_participant(participant)
-
-    except api.TwirpError as e:
-        logger.error(f"error creating SIP participant: {e.message}")
-        ctx.shutdown()
 
 if __name__ == "__main__":
     cli.run_app(
