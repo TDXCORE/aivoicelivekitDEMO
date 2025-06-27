@@ -224,7 +224,6 @@ async def entrypoint(ctx: JobContext):
             model="gpt-4o-realtime-preview",
             voice="alloy",
             temperature=0.7,
-            instructions="You are a professional SDR. Be confident, value-focused, and handle objections skillfully."
         )
     )
 
