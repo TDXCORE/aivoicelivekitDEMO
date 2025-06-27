@@ -26,27 +26,49 @@ async def make_outbound_call():
     metadata = {
         "dial_info": {
             "phone_number": "+573153041548",
-            "transfer_to": "+18632190153"  # Número para transferir si es necesario
+            "transfer_to": "+18632190153"
         },
         "prospect_info": {
-            "company_name": "Empresa Test",
+            "company_name": "Empresa Test Colombia",
             "contact_name": "Contacto Prueba"
         }
     }
     
     try:
-        # Crear job para llamada saliente
+        # Crear room que coincida con el patrón de dispatch rule
+        # Usar patrón: call-{participant.identity}_+number_randomID
+        import time
+        import random
+        import string
+        random_id = ''.join(random.choices(string.ascii_letters + string.digits, k=12))
+        room_name = f"call-sip_{metadata['dial_info']['phone_number'].replace('+', '')}_{metadata['dial_info']['phone_number']}_{random_id}"
+        
         job = await lk_api.room.create_room(
             api.CreateRoomRequest(
-                name=f"call-{metadata['dial_info']['phone_number'].replace('+', '')}",
+                name=room_name,
                 metadata=json.dumps(metadata)
             )
         )
         
         print(f"✅ Room creado: {job.name}")
-        print(f"📞 Iniciando llamada a {metadata['dial_info']['phone_number']}")
+        
+        # HACER LA LLAMADA REAL usando SIP - FORMATO CORRECTO
+        sip_participant = await lk_api.sip.create_sip_participant(
+            api.CreateSIPParticipantRequest(
+                sip_trunk_id=os.getenv("SIP_OUTBOUND_TRUNK_ID"),
+                sip_call_to=metadata['dial_info']['phone_number'],  # Sin tel: prefix
+                room_name=job.name,
+                participant_identity=f"sip_{metadata['dial_info']['phone_number'].replace('+', '')}"
+            )
+        )
+        
+        print(f"📞 Llamada SIP iniciada: {sip_participant.participant_identity}")
+        print(f"📞 Marcando a {metadata['dial_info']['phone_number']}")
         print(f"🏢 Empresa: {metadata['prospect_info']['company_name']}")
         print(f"👤 Contacto: {metadata['prospect_info']['contact_name']}")
+        
+        print(f"🤖 Room creado con patrón para auto-dispatch...")
+        print(f"   El dispatch rule debería detectar automáticamente este room")
         
         return job.name
         

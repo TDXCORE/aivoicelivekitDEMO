@@ -35,8 +35,17 @@ async def create_job():
     }
     
     try:
+        # First create the room
+        room = await lk_api.room.create_room(
+            api.CreateRoomRequest(
+                name=room_name,
+                metadata=json.dumps(metadata)
+            )
+        )
+        print(f"✅ Room creado: {room.name}")
+        
         # Crear job con agente específico
-        job = await lk_api.agent.create_agent_dispatch(
+        job = await lk_api.agent_dispatch.create_dispatch(
             api.CreateAgentDispatchRequest(
                 room=room_name,
                 agent_name="tdx-sdr-bot",

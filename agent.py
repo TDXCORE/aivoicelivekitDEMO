@@ -287,29 +287,63 @@ async def entrypoint(ctx: JobContext):
         )
     )
 
-    # Start session
-    session_started = asyncio.create_task(
-        session.start(
-            agent=agent,
-            room=ctx.room,
-        )
-    )
-
-    # For inbound calls, wait for SIP participant to join
-    logger.info("Waiting for inbound SIP call...")
-    await session_started
+    # Check if this is an outbound call (phone number in metadata)
+    outbound_phone = dial_info.get("phone_number") if call_direction == "outbound" else None
     
-    # Wait for participant to join (should happen automatically for inbound calls)
-    try:
-        participant = await ctx.wait_for_participant()
-        logger.info(f"participant joined: {participant.identity}")
-        agent.set_participant(participant)
+    if outbound_phone:
+        # OUTBOUND CALL: Create SIP participant first, then start session
+        logger.info(f"Creating outbound call to {outbound_phone}")
+        try:
+            await ctx.connect()
+            
+            # Create SIP participant for outbound call
+            sip_participant = await ctx.api.sip.create_sip_participant(
+                api.CreateSIPParticipantRequest(
+                    room_name=ctx.room.name,
+                    sip_trunk_id=os.getenv("SIP_OUTBOUND_TRUNK_ID"),
+                    sip_call_to=outbound_phone,
+                    participant_identity=f"sip_{outbound_phone.replace('+', '')}",
+                    wait_until_answered=True,
+                )
+            )
+            logger.info(f"SIP participant created: {sip_participant.participant_identity}")
+            
+            # Start session after SIP participant is created
+            await session.start(agent=agent, room=ctx.room)
+            
+            # Wait for participant to join
+            participant = await ctx.wait_for_participant()
+            logger.info(f"Outbound participant joined: {participant.identity}")
+            agent.set_participant(participant)
+            
+        except Exception as e:
+            logger.error(f"Error in outbound call: {e}")
+            ctx.shutdown()
+            
+    else:
+        # INBOUND CALL: Wait for participant first, then start session
+        logger.info("Waiting for inbound SIP call...")
+        await ctx.connect()
         
-        # The greeting will be triggered automatically by on_session_start method
+        # Start session
+        session_started = asyncio.create_task(
+            session.start(
+                agent=agent,
+                room=ctx.room,
+            )
+        )
         
-    except Exception as e:
-        logger.error(f"error waiting for participant: {e}")
-        ctx.shutdown()
+        await session_started
+        
+        # Wait for participant to join (should happen automatically for inbound calls)
+        try:
+            participant = await ctx.wait_for_participant()
+            logger.info(f"Inbound participant joined: {participant.identity}")
+            agent.set_participant(participant)
+            
+        except Exception as e:
+            logger.error(f"Error waiting for inbound participant: {e}")
+            ctx.shutdown()
 
 if __name__ == "__main__":
     cli.run_app(
