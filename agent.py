@@ -93,8 +93,8 @@ class TDXSDRBot(Agent):
         logger.info(f"👤 Contact: {self.contact_name}")
         
         try:
-            logger.info("⏳ Waiting 3 seconds for connection to stabilize...")
-            await asyncio.sleep(3)  # Wait for connection to stabilize
+            logger.info("⏳ Waiting 2 seconds for connection to stabilize...")
+            await asyncio.sleep(2)  # Shorter wait for better responsiveness
             
             # Always greet immediately for both inbound and outbound
             greeting_msg = f"¡Hola! Habla María de TDX. ¿Cómo está? Estoy llamando porque TDX está ayudando a empresas como {self.company_name} a transformar sus operaciones con inteligencia artificial. ¿Tiene un minuto para platicar?"
@@ -102,11 +102,25 @@ class TDXSDRBot(Agent):
             logger.info(f"🎤 Sending greeting for {self.call_direction} call...")
             logger.info(f"💬 Greeting message: {greeting_msg}")
             
+            # Send greeting and enable continuous conversation
             await ctx.session.generate_reply(
-                instructions=f"Say this greeting exactly in Spanish and wait for response: '{greeting_msg}'"
+                instructions=f"""
+                Say this greeting exactly in Spanish: '{greeting_msg}'
+                
+                After greeting, CONTINUE the conversation by:
+                1. Listening actively to their response
+                2. Following the MANDATORY CALL FLOW in your instructions
+                3. Asking follow-up questions based on their answers
+                4. Being conversational and natural - don't end the call
+                5. If they say yes to meeting, use the schedule_meeting tool
+                6. If they want to transfer, use the transfer_call tool
+                7. Keep the conversation going until they explicitly hang up or you've scheduled a meeting
+                
+                REMEMBER: This is a sales conversation, not a one-time announcement. Engage fully!
+                """
             )
             
-            logger.info("✅ Greeting sent successfully!")
+            logger.info("✅ Greeting sent with conversation instructions!")
             
         except Exception as e:
             logger.error(f"❌ Error in on_session_start: {e}")
@@ -278,12 +292,21 @@ async def entrypoint(ctx: JobContext):
         call_direction=call_direction,
     )
 
-    # Use OpenAI Realtime API for speech-to-speech with optimized settings
+    # Use OpenAI Realtime API with proper telephony configuration
+    from livekit.agents.openai.realtime import TurnDetection
+    
     session = AgentSession(
         llm=openai.realtime.RealtimeModel(
             model="gpt-4o-realtime-preview",
-            voice="alloy",  # Using valid OpenAI voice option
-            temperature=0.6,  # Minimum temperature required by OpenAI
+            voice="alloy",
+            temperature=0.7,  # Better for conversation
+            # Semantic VAD for better telephony conversation flow
+            turn_detection=TurnDetection(
+                type="semantic_vad",
+                eagerness="auto",  # Balanced conversation flow
+                create_response=True,
+                interrupt_response=True
+            )
         )
     )
 
@@ -296,7 +319,7 @@ async def entrypoint(ctx: JobContext):
         try:
             await ctx.connect()
             
-            # Create SIP participant for outbound call
+            # Create SIP participant for outbound call with conversation-friendly settings
             sip_participant = await ctx.api.sip.create_sip_participant(
                 api.CreateSIPParticipantRequest(
                     room_name=ctx.room.name,
@@ -304,6 +327,10 @@ async def entrypoint(ctx: JobContext):
                     sip_call_to=outbound_phone,
                     participant_identity=f"sip_{outbound_phone.replace('+', '')}",
                     wait_until_answered=True,
+                    # Disable answering machine detection for better conversation flow
+                    enable_answering_machine_detection=False,
+                    # Increase call timeout for longer conversations
+                    call_timeout=300,  # 5 minutes
                 )
             )
             logger.info(f"SIP participant created: {sip_participant.participant_identity}")
