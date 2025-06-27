@@ -58,15 +58,15 @@ async def create_outbound_call():
         )
         
         print(f"✅ Dispatch creado exitosamente!")
-        print(f"📋 Dispatch ID: {dispatch.dispatch_id}")
-        print(f"🏠 Room: {dispatch.room}")
-        print(f"🤖 Agente: {dispatch.agent_name}")
+        print(f"📋 Dispatch: {dispatch}")
+        print(f"🏠 Room: {room_name}")
+        print(f"🤖 Agente: tdx-sdr-bot")
         
         print(f"\n🎯 ¡Llamada outbound iniciada!")
         print(f"   El agente se conectará al room y creará la llamada SIP")
         print(f"   Deberías recibir la llamada en {phone_number}")
         
-        return dispatch.room
+        return room_name
         
     except Exception as e:
         print(f"❌ Error creando dispatch: {e}")

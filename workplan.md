@@ -117,20 +117,95 @@ Desarrollo de un agente de voz SDR inteligente para TDX (empresa de tecnología 
 
 ---
 
-## Fase 6: Optimización y Monitoreo
-### 6.1 Análisis de Costos
+## Fase 6: Optimización de Conversación Fluida
+### 6.1 Estado Actual Completado ✅
+- [X] Bot funcional para inbound y outbound calls
+- [X] Script SDR completo con Laura (prospección, BANT, agendamiento)
+- [X] Configuración básica OpenAI Realtime API
+- [X] Deploy productivo en Render
+
+### 6.2 Problema Identificado 🔍
+- **Latencia de Interrupción**: El bot se demora en responder cuando el usuario interrumpe
+- **Causa**: Configuración básica sin optimización de turn detection
+- **Impacto**: Conversación menos natural, frustración del usuario
+
+### 6.3 Plan de Optimización (Step-by-Step)
+
+#### **Opción 1: Semantic VAD Conservador** [SIGUIENTE]
+- [ ] **Objetivo**: Reducir 30-40% latencia de interrupción
+- [ ] **Riesgo**: Bajo (configuración estándar)
+- [ ] **Implementación**:
+  ```python
+  turn_detection=openai.realtime.TurnDetection(
+      type="semantic_vad",
+      eagerness="medium",
+      create_response=True,
+      interrupt_response=True
+  )
+  ```
+- [ ] **Pruebas**: Llamadas inbound y outbound
+- [ ] **Validación**: Verificar que no se rompa funcionalidad existente
+
+#### **Opción 2: Semantic VAD Agresivo** [FUTURO]
+- [ ] **Objetivo**: Máxima reducción de latencia
+- [ ] **Riesgo**: Medio (respuestas más rápidas pero posibles interrupciones)
+- [ ] **Implementación**:
+  ```python
+  turn_detection=openai.realtime.TurnDetection(
+      type="semantic_vad",
+      eagerness="high",
+      create_response=True,
+      interrupt_response=True
+  )
+  ```
+- [ ] **Condición**: Solo si Opción 1 funciona bien
+
+#### **Opción 3: LiveKit Turn Detector Avanzado** [AVANZADO]
+- [ ] **Objetivo**: Máximo control con modelo custom de 135M parámetros
+- [ ] **Riesgo**: Alto (requiere import adicional)
+- [ ] **Implementación**:
+  ```python
+  from livekit.plugins import turn_detector
+  turn_detection=turn_detector.MultilingualModel(
+      min_endpointing_delay=0.3,
+      max_endpointing_delay=2.0
+  )
+  ```
+- [ ] **Condición**: Solo si Opciones 1-2 no son suficientes
+
+#### **Optimizaciones Adicionales de Bajo Riesgo**
+- [ ] **Reducir tiempo inicialización**: `await asyncio.sleep(1)` en lugar de 2s
+- [ ] **Optimizar voz para español**: `voice="echo"` en lugar de "alloy"
+- [ ] **Ajustar temperature**: `temperature=0.8` para más naturalidad
+- [ ] **Monitoreo**: Agregar métricas de latencia de respuesta
+
+### 6.4 Metodología de Testing
+- [ ] **Baseline**: Medir latencia actual de interrupción
+- [ ] **A/B Testing**: Probar configuración antes/después
+- [ ] **Casos de prueba**:
+  - Interrupciones durante saludo inicial
+  - Interrupciones durante preguntas BANT
+  - Interrupciones durante propuesta de valor
+  - Llamadas con ruido de fondo
+- [ ] **Métricas**:
+  - Tiempo de respuesta a interrupción (ms)
+  - Tasa de interrupciones falsas
+  - Calidad percibida de conversación
+  - Funcionalidad SDR intacta
+
+### 6.5 Rollback Plan
+- [ ] **Git tags** antes de cada cambio
+- [ ] **Configuración feature flag** para revertir rápidamente
+- [ ] **Monitoreo continuo** de errores en producción
+- [ ] **Testing pipeline** automatizado
+
+### 6.6 Análisis de Costos y Rendimiento
 - [ ] Monitorear uso de minutos LiveKit
 - [ ] Calcular ancho de banda consumido
 - [ ] Analizar costos Twilio Voice
 - [ ] Proyecciones para 100 llamadas/día x 3min
 
-### 6.2 Optimizaciones SDR
-- [ ] Implementar guardrails específicos para SDR (max_tokens, timeouts)
-- [ ] Optimizar prompts para prospección efectiva
-- [ ] Configurar métricas de conversión (leads calificados/llamadas)
-- [ ] Implementar sistema de escalamiento a humanos
-
-### 6.3 Integraciones CRM
+### 6.7 Integraciones CRM (Post-Optimización)
 - [ ] Conectar con CRM via webhooks para registro de leads
 - [ ] Implementar logging de conversaciones
 - [ ] Configurar notificaciones de reuniones agendadas
