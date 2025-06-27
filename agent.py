@@ -26,6 +26,8 @@ load_dotenv(dotenv_path=".env.local")
 logger = logging.getLogger("tdx-sdr-bot")
 logger.setLevel(logging.INFO)
 
+# Force deployment update
+
 outbound_trunk_id = os.getenv("SIP_OUTBOUND_TRUNK_ID", "ST_G24Bo8JH4iy7")
 
 class TDXSDRBot(Agent):
