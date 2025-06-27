@@ -264,7 +264,7 @@ async def entrypoint(ctx: JobContext):
         llm=openai.realtime.RealtimeModel(
             model="gpt-4o-realtime-preview",
             voice="alloy",  # Using valid OpenAI voice option
-            temperature=0.5,  # Lower temperature for more consistent responses
+            temperature=0.6,  # Minimum temperature required by OpenAI
         )
     )
 
