@@ -347,12 +347,19 @@ async def entrypoint(ctx: JobContext):
         call_direction=call_direction,
     )
 
-    # Use OpenAI Realtime API with basic configuration
+    # Use OpenAI Realtime API with Semantic VAD for better conversation flow
     session = AgentSession(
         llm=openai.realtime.RealtimeModel(
             model="gpt-4o-realtime-preview",
             voice="alloy",
             temperature=0.7,  # Better for conversation
+            # Semantic VAD for improved turn detection and interruption handling
+            turn_detection=openai.realtime.TurnDetection(
+                type="semantic_vad",
+                eagerness="medium",  # Balanced conversation flow
+                create_response=True,
+                interrupt_response=True
+            )
         )
     )
 
