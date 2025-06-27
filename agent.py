@@ -87,25 +87,39 @@ class TDXSDRBot(Agent):
 
     async def on_session_start(self, ctx: RunContext):
         """Called when agent session starts - handle greeting based on call direction"""
-        logger.info(f"Agent session started, call direction: {self.call_direction}")
-        await asyncio.sleep(2)  # Wait for connection to stabilize
+        logger.info(f"🚀 Agent session started!")
+        logger.info(f"📞 Call direction detected: {self.call_direction}")
+        logger.info(f"🏢 Company: {self.company_name}")
+        logger.info(f"👤 Contact: {self.contact_name}")
         
-        if self.call_direction == "inbound":
-            # For inbound calls, greet immediately
+        try:
+            logger.info("⏳ Waiting 3 seconds for connection to stabilize...")
+            await asyncio.sleep(3)  # Wait for connection to stabilize
+            
+            # Always greet immediately for both inbound and outbound
             greeting_msg = f"¡Hola! Habla María de TDX. ¿Cómo está? Estoy llamando porque TDX está ayudando a empresas como {self.company_name} a transformar sus operaciones con inteligencia artificial. ¿Tiene un minuto para platicar?"
             
-            logger.info("Sending initial greeting for inbound call...")
-            await ctx.session.generate_reply(
-                instructions=f"Say this greeting exactly and wait for response: '{greeting_msg}'"
-            )
-        else:
-            # For outbound calls, greet immediately after connection
-            greeting_msg = f"¡Hola! Habla María de TDX. ¿Cómo está? Estoy llamando porque TDX está ayudando a empresas como {self.company_name} a transformar sus operaciones con inteligencia artificial. ¿Tiene un minuto para platicar?"
+            logger.info(f"🎤 Sending greeting for {self.call_direction} call...")
+            logger.info(f"💬 Greeting message: {greeting_msg}")
             
-            logger.info("Sending initial greeting for outbound call...")
             await ctx.session.generate_reply(
-                instructions=f"Say this greeting exactly and wait for response: '{greeting_msg}'"
+                instructions=f"Say this greeting exactly in Spanish and wait for response: '{greeting_msg}'"
             )
+            
+            logger.info("✅ Greeting sent successfully!")
+            
+        except Exception as e:
+            logger.error(f"❌ Error in on_session_start: {e}")
+            logger.error(f"🔍 Exception details: {type(e).__name__}: {str(e)}")
+            # Try a simple fallback greeting
+            try:
+                logger.info("🔄 Attempting fallback greeting...")
+                await ctx.session.generate_reply(
+                    instructions="Say in Spanish: 'Hola, habla María de TDX. ¿Cómo está?'"
+                )
+                logger.info("✅ Fallback greeting sent!")
+            except Exception as fallback_error:
+                logger.error(f"❌ Fallback greeting also failed: {fallback_error}")
 
     async def hangup(self):
         """Helper function to hang up the call by deleting the room"""
