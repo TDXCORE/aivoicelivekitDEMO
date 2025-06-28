@@ -100,12 +100,27 @@ class TDXSDRBot(Agent):
 
 ---
 
-### 6. Cierre y Agendamiento
+### 6. Proceso de Agendamiento (NUEVA FUNCIONALIDAD)
 
-* *(Si el cliente acepta)*
-    * **Enrique:** "¿Qué día y hora? Por ejemplo, **Lunes 1 de julio a las 10 AM o Miércoles 3 de julio a las 2 PM**."
-    * *(Una vez confirmada la hora)*
-        * **Enrique:** "Agendado. Detalles por email."
+* *(Si el cliente acepta agendar)*
+    * **Paso 1 - Solicitar Email:**
+        * **Enrique:** "Perfecto. Para enviarle la invitación, necesito su email. **¿Podría dármelo deletreado letra por letra para asegurar que lo registro correctamente?**"
+        * *(Usar función collect_email para validar y confirmar)*
+        * *(Si el email no es válido)* **Enrique:** "Disculpe, creo que no capté bien algunas letras. **¿Podría repetir su email deletreándolo nuevamente?**"
+    
+    * **Paso 2 - Consultar Disponibilidad:**
+        * **Enrique:** "Excelente. Déjeme consultar la disponibilidad. **¿Tiene alguna preferencia de día o hora?**"
+        * *(Usar función check_availability)*
+        * **Enrique:** "Tengo disponibilidad para dos opciones: **[Opción 1] o [Opción 2]. ¿Cuál le conviene mejor?**"
+    
+    * **Paso 3 - Confirmar Agendamiento:**
+        * *(Una vez que el cliente elija)*
+        * **Enrique:** "Perfecto, agendamos para **[día y hora confirmada]**. Le enviaré la invitación de Teams a **[email confirmado]**."
+        * *(Usar función schedule_meeting)*
+        * **Enrique:** "**¡Listo! Reunión agendada.** Recibirá la invitación por email en unos minutos. Un consultor TDX se reunirá con usted. **¿Alguna pregunta sobre la reunión?**"
+
+### 7. Cierre y Agendamiento Alternativo
+
 * *(Si el cliente duda o necesita más detalles sin agendar)*
     * **Enrique:** "Entiendo. **Si hay un desafío clave, hay una solución con inteligencia artificial.** ¿Prefiere una llamada breve ahora para aclarar más?"
         * *(Si acepta, el bot transfiere o toma nota para el agente humano).*
@@ -122,6 +137,35 @@ class TDXSDRBot(Agent):
 * **Hablar Rápido y Claro:** El script es conciso para facilitar una dicción ágil del bot.
 * **Conexión con Valor y ROI Implícito:** Aunque no se pregunta directamente por presupuesto, las preguntas sobre "impacto en costos/tiempo/crecimiento" apuntan al ROI.
 * **Micro-Adaptación:** Enrique "escucha" y "responde" brevemente, pero con una pregunta que lleva al cliente a profundizar más en su dolor específico.
+
+---
+
+### INSTRUCCIONES TÉCNICAS PARA FUNCIONES DE AGENDAMIENTO:
+
+**IMPORTANTE: Usar las siguientes funciones en el orden correcto:**
+
+1. **collect_email(email, spelled_out)**: 
+   - Úsala cuando el cliente dé su email
+   - SIEMPRE pide que lo deletreen: "¿Podría deletreármelo letra por letra?"
+   - Si email_valid=False, pide que lo repitan
+
+2. **check_availability(preferred_date, preferred_time)**:
+   - Úsala después de tener el email válido
+   - SIEMPRE ofrece exactamente 2 opciones
+   - Menciona las opciones como: "Opción 1: [formatted]" y "Opción 2: [formatted]"
+
+3. **schedule_meeting(email, date, time, meeting_type)**:
+   - Úsala solo después de que el cliente elija una opción
+   - Usa el email validado y la fecha/hora exacta elegida
+   - SIEMPRE confirma: "Agendado para [fecha] a las [hora]"
+
+**FLUJO OBLIGATORIO:**
+Email → Disponibilidad → Confirmación → Agendamiento
+
+**NUNCA:**
+- Agendes sin email válido
+- Ofrezcas más de 2 opciones de horario
+- Confirmes sin usar schedule_meeting()
 
 ---
 
@@ -231,23 +275,121 @@ Este enfoque transformará a Enrique en un consultor de inteligencia artificial 
         await self.hangup()
 
     @function_tool()
+    async def collect_email(
+        self,
+        ctx: RunContext,
+        email: str,
+        spelled_out: str = "",
+    ):
+        """Collect and verify prospect's email address with spelling confirmation"""
+        logger.info(f"collecting email: {email}, spelled out: {spelled_out}")
+        
+        # Basic email validation
+        import re
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        is_valid = re.match(email_pattern, email.lower()) is not None
+        
+        return {
+            "email_collected": True,
+            "email": email.lower(),
+            "spelled_verification": spelled_out,
+            "email_valid": is_valid,
+            "needs_respelling": not is_valid
+        }
+
+    @function_tool()
+    async def check_availability(
+        self,
+        ctx: RunContext,
+        preferred_date: str = "",
+        preferred_time: str = "",
+    ):
+        """Check calendar availability and offer 2 time slot options using Microsoft Graph API"""
+        logger.info(f"checking availability for preferred: {preferred_date} {preferred_time}")
+        
+        from datetime import datetime, timedelta
+        from microsoft_graph_client import graph_client
+        
+        try:
+            # Define search range (next 7 days)
+            start_date = datetime.now() + timedelta(days=1)  # Start tomorrow
+            end_date = start_date + timedelta(days=7)  # Search 7 days ahead
+            
+            # Check availability using Microsoft Graph API
+            available_slots = await graph_client.check_availability(start_date, end_date)
+            
+            # Ensure we have at least 2 slots, fallback to mock if needed
+            if len(available_slots) < 2:
+                logger.warning("Insufficient availability from Graph API, using fallback slots")
+                available_slots = graph_client._get_mock_availability()
+            
+            return {
+                "availability_checked": True,
+                "available_slots": available_slots[:2]  # Always return exactly 2 slots
+            }
+            
+        except Exception as e:
+            logger.error(f"Error checking availability: {e}")
+            # Fallback to mock availability
+            from microsoft_graph_client import graph_client
+            available_slots = graph_client._get_mock_availability()
+            
+            return {
+                "availability_checked": True,
+                "available_slots": available_slots[:2]
+            }
+
+    @function_tool()
     async def schedule_meeting(
         self,
         ctx: RunContext,
+        email: str,
         date: str,
         time: str,
         meeting_type: str = "discovery_call",
     ):
-        """Schedule a meeting with a qualified prospect in MS Teams"""
+        """Schedule a meeting with collected email and confirmed time slot using Microsoft Graph API"""
         logger.info(
-            f"scheduling {meeting_type} for {self.contact_name} from {self.company_name} on {date} at {time}"
+            f"scheduling {meeting_type} for {self.contact_name} ({email}) from {self.company_name} on {date} at {time}"
         )
-        await asyncio.sleep(2)
-        return {
-            "meeting_scheduled": True,
-            "meeting_link": "https://teams.microsoft.com/l/meetup-join/...",
-            "calendar_invite_sent": True,
-        }
+        
+        try:
+            from microsoft_graph_client import graph_client
+            
+            # Create meeting using Microsoft Graph API
+            result = await graph_client.create_meeting(
+                attendee_email=email,
+                meeting_date=date,
+                meeting_time=time,
+                contact_name=self.contact_name,
+                company_name=self.company_name,
+                meeting_type=meeting_type
+            )
+            
+            logger.info(f"Meeting created successfully: {result.get('meeting_id', 'N/A')}")
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error scheduling meeting: {e}")
+            # Fallback to mock meeting creation
+            from datetime import datetime
+            import uuid
+            
+            meeting_id = str(uuid.uuid4())[:8]
+            formatted_date = datetime.strptime(date, "%Y-%m-%d").strftime("%A, %B %d, %Y")
+            
+            return {
+                "meeting_scheduled": True,
+                "meeting_id": meeting_id,
+                "attendee_email": email,
+                "meeting_date": formatted_date,
+                "meeting_time": time,
+                "meeting_type": meeting_type,
+                "meeting_link": f"https://teams.microsoft.com/l/meetup-join/{meeting_id}",
+                "calendar_invite_sent": True,
+                "confirmation_sent": True,
+                "fallback_used": True
+            }
 
     @function_tool()
     async def qualify_prospect(

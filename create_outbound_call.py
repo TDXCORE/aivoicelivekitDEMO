@@ -23,7 +23,7 @@ async def create_outbound_call():
     )
     
     # Datos de la llamada
-    phone_number = "+573153041548"
+    phone_number = "+573108777663"
     
     # Metadata según documentación LiveKit
     metadata = {
