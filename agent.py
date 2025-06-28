@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dotenv import load_dotenv
+from openai.types.beta.realtime.session import TurnDetection
 import json
 import os
 from typing import Any
@@ -348,7 +349,16 @@ async def entrypoint(ctx: JobContext):
         llm=openai.realtime.RealtimeModel(
             model="gpt-4o-realtime-preview",
             voice="alloy",
-            temperature=0.8,  # Increased for more natural conversation
+            turn_detection=TurnDetection(
+                type="semantic",        # espera cierre semántico
+                threshold=0.5,
+                prefix_padding_ms=300,
+                silence_duration_ms=500,
+                create_response=True,
+                interrupt_response=True,
+            ),
+            temperature=1.0,
+                # Increased for more natural conversation
         )
     )
 
