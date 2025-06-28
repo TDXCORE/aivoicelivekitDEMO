@@ -350,7 +350,8 @@ async def entrypoint(ctx: JobContext):
             model="gpt-4o-realtime-preview",
             voice="alloy",
             turn_detection=TurnDetection(
-                type="Semantic-VAD",        # espera cierre semántico
+                type="Semantic-VAD",
+                eagerness="auto",       # espera cierre semántico
                 threshold=0.5,
                 prefix_padding_ms=300,
                 silence_duration_ms=500,
