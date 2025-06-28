@@ -350,13 +350,11 @@ async def entrypoint(ctx: JobContext):
             model="gpt-4o-realtime-preview",
             voice="alloy",
             turn_detection=TurnDetection(
-                type="Semantic-VAD",
-                eagerness="auto",       # espera cierre semántico
-                threshold=0.5,
-                prefix_padding_ms=300,
-                silence_duration_ms=500,
-                create_response=True,
-                interrupt_response=True,
+            type="semantic_vad",   # ✔ minúsculas + underscore
+            eagerness="auto",      # low | medium | high | auto
+            create_response=True,
+            interrupt_response=True,
+            
             ),
             temperature=1.0,
                 # Increased for more natural conversation
