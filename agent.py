@@ -7,6 +7,10 @@ from openai.types.beta.realtime.session import TurnDetection
 import json
 import os
 from typing import Any
+import re
+import uuid
+from datetime import datetime, timedelta
+from microsoft_graph_client import graph_client
 
 from livekit import rtc, api
 from livekit.agents import (
@@ -284,8 +288,7 @@ Este enfoque transformará a Enrique en un consultor de inteligencia artificial 
         """Collect and verify prospect's email address with spelling confirmation"""
         logger.info(f"collecting email: {email}, spelled out: {spelled_out}")
         
-        # Basic email validation
-        import re
+        # Basic email validation - import ya está al inicio del archivo
         email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
         is_valid = re.match(email_pattern, email.lower()) is not None
         
@@ -304,14 +307,19 @@ Este enfoque transformará a Enrique en un consultor de inteligencia artificial 
         preferred_date: str = "",
         preferred_time: str = "",
     ):
-        """Check calendar availability and offer 2 time slot options using Microsoft Graph API"""
+        """Check calendar availability using Microsoft Graph API with user feedback"""
         logger.info(f"checking availability for preferred: {preferred_date} {preferred_time}")
         
-        from datetime import datetime, timedelta
-        from microsoft_graph_client import graph_client
+        # NUEVO: Feedback inmediato al usuario
+        await ctx.session.generate_reply(
+            instructions="Di exactamente en español: 'Solo un momento por favor mientras consulto la disponibilidad en el calendario.'"
+        )
+        
+        # NUEVO: Pequeña pausa para que se escuche el mensaje
+        await asyncio.sleep(0.2)
         
         try:
-            # Define search range (next 7 days)
+            # Define search range (next 7 days) - imports ya están al inicio
             start_date = datetime.now() + timedelta(days=1)  # Start tomorrow
             end_date = start_date + timedelta(days=7)  # Search 7 days ahead
             
@@ -331,7 +339,6 @@ Este enfoque transformará a Enrique en un consultor de inteligencia artificial 
         except Exception as e:
             logger.error(f"Error checking availability: {e}")
             # Fallback to mock availability
-            from microsoft_graph_client import graph_client
             available_slots = graph_client._get_mock_availability()
             
             return {
@@ -348,15 +355,21 @@ Este enfoque transformará a Enrique en un consultor de inteligencia artificial 
         time: str,
         meeting_type: str = "discovery_call",
     ):
-        """Schedule a meeting with collected email and confirmed time slot using Microsoft Graph API"""
+        """Schedule meeting using Microsoft Graph API with user feedback"""
         logger.info(
             f"scheduling {meeting_type} for {self.contact_name} ({email}) from {self.company_name} on {date} at {time}"
         )
         
+        # NUEVO: Feedback inmediato al usuario
+        await ctx.session.generate_reply(
+            instructions="Di exactamente en español: 'Solo un momento por favor mientras creo la reunión en Teams y envío la invitación.'"
+        )
+        
+        # NUEVO: Pequeña pausa para que se escuche el mensaje
+        await asyncio.sleep(0.2)
+        
         try:
-            from microsoft_graph_client import graph_client
-            
-            # Create meeting using Microsoft Graph API
+            # Create meeting using Microsoft Graph API - import ya está al inicio
             result = await graph_client.create_meeting(
                 attendee_email=email,
                 meeting_date=date,
@@ -371,10 +384,7 @@ Este enfoque transformará a Enrique en un consultor de inteligencia artificial 
             
         except Exception as e:
             logger.error(f"Error scheduling meeting: {e}")
-            # Fallback to mock meeting creation
-            from datetime import datetime
-            import uuid
-            
+            # Fallback to mock meeting creation - imports ya están al inicio
             meeting_id = str(uuid.uuid4())[:8]
             formatted_date = datetime.strptime(date, "%Y-%m-%d").strftime("%A, %B %d, %Y")
             
@@ -486,20 +496,19 @@ async def entrypoint(ctx: JobContext):
         call_direction=call_direction,
     )
 
-    # Use OpenAI Realtime API with basic configuration (version compatibility)
+    # Use OpenAI Realtime API with optimized configuration for speed
     session = AgentSession(
         llm=openai.realtime.RealtimeModel(
             model="gpt-4o-realtime-preview",
             voice="alloy",
             turn_detection=TurnDetection(
-            type="semantic_vad",   # ✔ minúsculas + underscore
-            eagerness="auto",      # low | medium | high | auto
-            create_response=True,
-            interrupt_response=True,
-            
+                type="semantic_vad",   # ✔ minúsculas + underscore
+                eagerness="high",      # OPTIMIZADO: De "auto" a "high" para respuestas más rápidas
+                create_response=True,
+                interrupt_response=True,
             ),
-            temperature=1.0,
-                # Increased for more natural conversation
+            temperature=0.9,  # OPTIMIZADO: Reducir de 1.0 a 0.9 para respuestas más directas
+            instructions="IMPORTANTE: Habla rápido, con energía y de forma concisa. No hagas pausas largas entre palabras.",
         )
     )
 

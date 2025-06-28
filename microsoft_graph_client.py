@@ -44,11 +44,20 @@ class MicrosoftGraphClient:
             client_secret = os.getenv("MICROSOFT_GRAPH_CLIENT_SECRET") 
             tenant_id = os.getenv("MICROSOFT_GRAPH_TENANT_ID")
             
+            # CAMBIO: Validación más estricta para producción
             if not all([client_id, client_secret, tenant_id]):
-                logger.warning("Microsoft Graph credentials not found in environment. Using mock implementation.")
+                if any([client_id, client_secret, tenant_id]):
+                    logger.error("PARTIAL Microsoft Graph credentials found - check environment variables!")
+                else:
+                    logger.info("Microsoft Graph credentials not found - using mock data for development")
                 return
             
-            # Create credential
+            # CAMBIO: Validación de formato de credenciales
+            if len(client_id) < 10 or len(tenant_id) < 10:
+                logger.error("Invalid Microsoft Graph credential format detected!")
+                return
+                
+            # Create credential con timeout optimizado
             credential = ClientSecretCredential(
                 tenant_id=tenant_id,
                 client_id=client_id,
@@ -61,7 +70,7 @@ class MicrosoftGraphClient:
                 scopes=['https://graph.microsoft.com/.default']
             )
             
-            logger.info("Microsoft Graph client initialized successfully")
+            logger.info("✅ Microsoft Graph client initialized successfully with REAL credentials")
             
         except Exception as e:
             logger.error(f"Failed to initialize Microsoft Graph client: {e}")
@@ -158,52 +167,69 @@ class MicrosoftGraphClient:
     
     async def create_meeting(self, attendee_email: str, meeting_date: str, meeting_time: str, 
                            contact_name: str, company_name: str, meeting_type: str = "discovery_call") -> Dict[str, Any]:
-        """Create a Teams meeting with the specified details"""
+        """Create a Teams meeting with the specified details using REAL Microsoft Graph API"""
         
         if not self.client:
-            # Return mock meeting data if Graph client not available
+            logger.warning("Microsoft Graph client not available - using mock data")
             return self._create_mock_meeting(attendee_email, meeting_date, meeting_time, contact_name)
         
         try:
             # Parse date and time
             meeting_datetime = datetime.strptime(f"{meeting_date} {meeting_time}", "%Y-%m-%d %I:%M %p")
-            end_datetime = meeting_datetime + timedelta(minutes=30)  # 30-minute meeting
+            end_datetime = meeting_datetime + timedelta(minutes=30)
             
-            # Create event object
+            # NUEVO: Crear evento con Teams automático usando imports correctos
+            from msgraph.generated.models.event import Event
+            from msgraph.generated.models.item_body import ItemBody
+            from msgraph.generated.models.body_type import BodyType
+            from msgraph.generated.models.date_time_time_zone import DateTimeTimeZone
+            from msgraph.generated.models.attendee import Attendee
+            from msgraph.generated.models.email_address import EmailAddress
+            from msgraph.generated.models.attendee_type import AttendeeType
+            from msgraph.generated.models.online_meeting_provider_type import OnlineMeetingProviderType
+            
             event = Event()
             event.subject = f"TDX Discovery Call - {contact_name} ({company_name})"
             event.body = ItemBody()
             event.body.content_type = BodyType.Html
             event.body.content = f"""
-            <p>Discovery call with {contact_name} from {company_name}</p>
-            <p>Meeting Type: {meeting_type}</p>
-            <p>Scheduled by: TDX SDR Bot</p>
+            <h3>Reunión de Descubrimiento TDX</h3>
+            <p><strong>Contacto:</strong> {contact_name}</p>
+            <p><strong>Empresa:</strong> {company_name}</p>
+            <p><strong>Tipo:</strong> {meeting_type}</p>
+            <p><strong>Agendado por:</strong> Enrique - TDX SDR Bot</p>
+            <br>
+            <p>Esta reunión fue agendada automáticamente por nuestro asistente virtual.</p>
             """
             
-            # Set date and time
+            # Set date and time con timezone
             event.start = DateTimeTimeZone()
             event.start.date_time = meeting_datetime.isoformat()
-            event.start.time_zone = "UTC"
+            event.start.time_zone = "America/Bogota"  # Colombia timezone
             
             event.end = DateTimeTimeZone()
             event.end.date_time = end_datetime.isoformat()
-            event.end.time_zone = "UTC"
+            event.end.time_zone = "America/Bogota"
             
             # Add attendee
             attendee = Attendee()
             attendee.email_address = EmailAddress()
             attendee.email_address.address = attendee_email
             attendee.email_address.name = contact_name
+            attendee.type = AttendeeType.Required
             event.attendees = [attendee]
             
-            # Enable Teams meeting
+            # CLAVE: Enable Teams meeting automáticamente
             event.is_online_meeting = True
-            event.online_meeting_provider = OnlineMeetingProvider.TeamsForBusiness
+            event.online_meeting_provider = OnlineMeetingProviderType.TeamsForBusiness
             
-            # Create the event
-            created_event = await self.client.me.calendar.events.post(event)
+            # CREAR el evento con timeout
+            created_event = await asyncio.wait_for(
+                self.client.me.calendar.events.post(event),
+                timeout=10.0  # 10 second timeout
+            )
             
-            logger.info(f"Successfully created meeting for {attendee_email} on {meeting_date} at {meeting_time}")
+            logger.info(f"✅ REAL Teams meeting created for {attendee_email} on {meeting_date} at {meeting_time}")
             
             return {
                 "meeting_scheduled": True,
@@ -214,11 +240,15 @@ class MicrosoftGraphClient:
                 "meeting_type": meeting_type,
                 "meeting_link": created_event.online_meeting.join_url if created_event.online_meeting else f"https://teams.microsoft.com/l/meetup-join/{created_event.id}",
                 "calendar_invite_sent": True,
-                "confirmation_sent": True
+                "confirmation_sent": True,
+                "real_api_used": True  # INDICADOR de que se usó API real
             }
             
+        except asyncio.TimeoutError:
+            logger.error("Microsoft Graph API timeout - falling back to mock")
+            return self._create_mock_meeting(attendee_email, meeting_date, meeting_time, contact_name)
         except Exception as e:
-            logger.error(f"Error creating meeting: {e}")
+            logger.error(f"Error creating REAL meeting: {e}")
             return self._create_mock_meeting(attendee_email, meeting_date, meeting_time, contact_name)
     
     def _create_mock_meeting(self, attendee_email: str, meeting_date: str, meeting_time: str, contact_name: str) -> Dict[str, Any]:
