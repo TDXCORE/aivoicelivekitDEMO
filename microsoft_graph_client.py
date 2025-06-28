@@ -10,18 +10,12 @@ import asyncio
 try:
     from msgraph import GraphServiceClient
     from azure.identity import ClientSecretCredential
-    from msgraph.generated.models.event import Event
-    from msgraph.generated.models.date_time_time_zone import DateTimeTimeZone
-    from msgraph.generated.models.item_body import ItemBody
-    from msgraph.generated.models.body_type import BodyType
-    from msgraph.generated.models.attendee import Attendee
-    from msgraph.generated.models.email_address import EmailAddress
-    from msgraph.generated.models.recipient import Recipient
-    from msgraph.generated.models.online_meeting_provider import OnlineMeetingProvider
     GRAPH_AVAILABLE = True
-except ImportError:
+    logging.info("✅ Microsoft Graph SDK imported successfully")
+except ImportError as e:
     GRAPH_AVAILABLE = False
-    logging.warning("Microsoft Graph SDK not available. Calendar features will use mock data.")
+    logging.error(f"❌ Microsoft Graph SDK import failed: {e}")
+    logging.error("Install with: pip install msgraph-sdk==1.5.4 azure-identity==1.19.0")
 
 logger = logging.getLogger("microsoft_graph_client")
 

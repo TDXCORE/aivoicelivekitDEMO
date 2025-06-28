@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: aivoicelivekitdemo
+    env: python
+    plan: starter
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -r requirements.txt
+      pip install --force-reinstall msgraph-sdk==1.5.4 azure-identity==1.19.0 msgraph-core==1.1.5 azure-core==1.29.5
+      python -c "from msgraph import GraphServiceClient; from azure.identity import ClientSecretCredential; print('✅ Microsoft Graph SDK installation verified')"
+    startCommand: python start_agent.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.0
+      - key: PIP_NO_CACHE_DIR
+        value: 1
