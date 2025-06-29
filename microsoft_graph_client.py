@@ -78,14 +78,17 @@ class MicrosoftGraphClient:
             return self._get_mock_availability()
         
         try:
-            # Get calendar events in the date range
-            events = await self.client.me.calendar.events.get(
-                query_parameters={
-                    'startDateTime': start_date.isoformat(),
-                    'endDateTime': end_date.isoformat(),
-                    'select': ['start', 'end', 'subject']
-                }
-            )
+            # Get calendar events in the date range using specific user email
+            user_email = os.getenv('USER_EMAIL', 'ventas@tdxcore.com')
+            from msgraph.generated.users.item.calendar.events.events_request_builder import EventsRequestBuilder
+            
+            request_config = EventsRequestBuilder.EventsRequestBuilderGetRequestConfiguration()
+            request_config.query_parameters = EventsRequestBuilder.EventsRequestBuilderGetQueryParameters()
+            request_config.query_parameters.start_date_time = start_date.isoformat()
+            request_config.query_parameters.end_date_time = end_date.isoformat()
+            request_config.query_parameters.select = ['start', 'end', 'subject']
+            
+            events = await self.client.users.by_user_id(user_email).calendar.events.get(request_config)
             
             # Generate available slots based on existing events
             available_slots = self._calculate_available_slots(events.value, start_date, end_date)
@@ -217,9 +220,10 @@ class MicrosoftGraphClient:
             event.is_online_meeting = True
             event.online_meeting_provider = OnlineMeetingProviderType.TeamsForBusiness
             
-            # CREAR el evento con timeout
+            # CREAR el evento con timeout usando email específico
+            user_email = os.getenv('USER_EMAIL', 'ventas@tdxcore.com')
             created_event = await asyncio.wait_for(
-                self.client.me.calendar.events.post(event),
+                self.client.users.by_user_id(user_email).calendar.events.post(event),
                 timeout=10.0  # 10 second timeout
             )
             
