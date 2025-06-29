@@ -508,7 +508,6 @@ async def entrypoint(ctx: JobContext):
                 interrupt_response=True,
             ),
             temperature=0.9,  # OPTIMIZADO: Reducir de 1.0 a 0.9 para respuestas más directas
-            instructions="IMPORTANTE: Habla rápido, con energía y de forma concisa. No hagas pausas largas entre palabras.",
         )
     )
 
