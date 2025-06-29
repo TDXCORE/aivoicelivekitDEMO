@@ -522,7 +522,7 @@ async def entrypoint(ctx: JobContext):
                 interrupt_response=True,
             ),
             temperature=0.6,  # CAMBIO: Más bajo para MÁXIMA precisión en emails
-            input_audio_transcription="whisper-1",  # Transcripción habilitada
+            # REMOVIDO: input_audio_transcription causa error de compatibilidad
         )
     )
 
