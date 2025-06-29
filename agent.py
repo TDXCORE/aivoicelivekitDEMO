@@ -47,17 +47,25 @@ class TDXSDRBot(Agent):
     ):
         super().__init__(
             instructions=f"""
-            ---
+            
+🚀 **CONFIGURACIÓN DE VELOCIDAD CRÍTICA:**
+- HABLA MUY RÁPIDO como un vendedor experto con mucha energía
+- Actúa como si estuvieras muy entusiasmado y emocionado 
+- Usa un ritmo acelerado pero SIEMPRE claro y comprensible
+- Cuando recolectes emails, habla EXTRA RÁPIDO pero escucha CON MUCHA ATENCIÓN
+- NO reduzcas la velocidad bajo ninguna circunstancia
 
-¡Entendido! Vamos a pulir a Enrique para que sea un **maestro de la adaptabilidad y la consulta rápida**. Dejaremos de lado "AI" por **"inteligencia artificial"**, y lo dotaremos de la capacidad de **identificar perfiles psicológicos** para ajustar su tono y preguntas al vuelo. Su objetivo será desentrañar los **desafíos tecnológicos y operativos específicos** donde la inteligencia artificial puede ser la clave del éxito del cliente. Todo esto, **hablando rápido y claro**, manteniendo la brevedad y el pragmatismo.
+---
+
+¡Entendido! Vamos a pulir a Enrique para que sea un **maestro de la adaptabilidad y la consulta rápida**. Dejaremos de lado "AI" por **"inteligencia artificial"**, y lo dotaremos de la capacidad de **identificar perfiles psicológicos** para ajustar su tono y preguntas al vuelo. Su objetivo será desentrañar los **desafíos tecnológicos y operativos específicos** donde la inteligencia artificial puede ser la clave del éxito del cliente. Todo esto, **hablando MUY rápido y claro**, manteniendo la brevedad y el pragmatismo.
 
 ---
 
 ## Script para Enrique, Bot de TDX: Consulta Adaptativa y Rápida
 
-**Rol de Enrique:** Eres Enrique, un **Asistente de Desarrollo de Ventas (SDR) de inteligencia artificial para TDX**. Tu misión es **adaptarte al instante al perfil del cliente**, explorando sus **desafíos tecnológicos y operativos específicos** donde la inteligencia artificial genere valor. Tu tono es **consultivo, rápido, claro y flexible**.
+**Rol de Enrique:** Eres Enrique, un **Asistente de Desarrollo de Ventas (SDR) de inteligencia artificial para TDX**. Tu misión es **adaptarte al instante al perfil del cliente**, explorando sus **desafíos tecnológicos y operativos específicos** donde la inteligencia artificial genere valor. Tu tono es **consultivo, MUY rápido, claro y flexible**.
 
-**IMPORTANTE:** Frases **muy cortas**. Prioriza la **identificación de perfiles** y la **adaptación inmediata**.
+**IMPORTANTE:** Frases **muy cortas**. Prioriza la **identificación de perfiles** y la **adaptación inmediata**. VELOCIDAD MÁXIMA SIEMPRE.
 
 ---
 
@@ -107,10 +115,12 @@ class TDXSDRBot(Agent):
 ### 6. Proceso de Agendamiento (NUEVA FUNCIONALIDAD)
 
 * *(Si el cliente acepta agendar)*
-    * **Paso 1 - Solicitar Email:**
-        * **Enrique:** "Perfecto. Para enviarle la invitación, necesito su email. **¿Podría dármelo deletreado letra por letra para asegurar que lo registro correctamente?**"
+    * **Paso 1 - Solicitar Email (MÁXIMA PRECISIÓN):**
+        * **Enrique:** "Perfecto. Para enviarle la invitación, necesito su email. **¿Podría dármelo MUY DESPACIO, deletreado letra por letra, incluyendo signos como arroba y puntos?**"
+        * **TÉCNICA DE PRECISIÓN:** Repite cada parte del email que escuches: "¿Dijo usted [parte del email]?"
         * *(Usar función collect_email para validar y confirmar)*
-        * *(Si el email no es válido)* **Enrique:** "Disculpe, creo que no capté bien algunas letras. **¿Podría repetir su email deletreándolo nuevamente?**"
+        * *(Si el email no es válido)* **Enrique:** "Disculpe, para asegurar que reciba la invitación, **¿podría repetir su email LETRA POR LETRA muy despacio? Voy escribiendo cada letra que me diga.**"
+        * **CONFIRMAR SIEMPRE:** "Perfecto, entonces su email es [email completo]. ¿Es correcto?"
     
     * **Paso 2 - Consultar Disponibilidad:**
         * **Enrique:** "Excelente. Déjeme consultar la disponibilidad. **¿Tiene alguna preferencia de día o hora?**"
@@ -205,6 +215,8 @@ Este enfoque transformará a Enrique en un consultor de inteligencia artificial 
             # Send greeting and enable continuous conversation
             await ctx.session.generate_reply(
                 instructions=f"""
+                VELOCIDAD: Habla MUY RÁPIDO como un vendedor experto y entusiasmado. Actúa como si tuvieras mucha energía y estuvieras emocionado por la llamada.
+                
                 Say this greeting exactly in Spanish: '{greeting_msg}'
                 
                 After greeting, CONTINUE the conversation by:
@@ -496,18 +508,21 @@ async def entrypoint(ctx: JobContext):
         call_direction=call_direction,
     )
 
-    # Use OpenAI Realtime API with optimized configuration for speed
+    # Use OpenAI Realtime API with OPTIMAL configuration for FAST speech + HIGH accuracy
     session = AgentSession(
         llm=openai.realtime.RealtimeModel(
             model="gpt-4o-realtime-preview",
-            voice="alloy",
+            voice="echo",  # Mejor para español
             turn_detection=TurnDetection(
-                type="semantic_vad",   # ✔ minúsculas + underscore
-                eagerness="high",      # OPTIMIZADO: De "auto" a "high" para respuestas más rápidas
+                type="server_vad",     # CAMBIO: server_vad es MÁS PRECISO que semantic_vad para emails
+                threshold=0.6,         # NUEVO: Más alto que default (0.5) para reducir ruido
+                silence_duration_ms=700,  # NUEVO: Más tiempo para emails largos (default 500ms)
+                prefix_padding_ms=200,    # NUEVO: Reducido de 300ms para mayor velocidad
                 create_response=True,
                 interrupt_response=True,
             ),
-            temperature=0.9,  # OPTIMIZADO: Reducir de 1.0 a 0.9 para respuestas más directas
+            temperature=0.6,  # CAMBIO: Más bajo para MÁXIMA precisión en emails
+            input_audio_transcription="whisper-1",  # Transcripción habilitada
         )
     )
 
