@@ -41,23 +41,19 @@ def check_environment_variables():
         return True
 
 def main():
-    """Main startup function"""
-    logger.info("🚀 Starting TDX SDR Agent...")
+    """Main startup function - OPTIMIZED for <800ms latency"""
+    logger.info("🚀 Starting TDX SDR Agent (ULTRA-FAST MODE)...")
     
-    # Check dependencies
-    graph_available = verify_graph_sdk()
-    env_vars_available = check_environment_variables()
+    # OPTIMIZED: Skip time-consuming dependency checks for faster startup
+    # Note: Graph client will still work via fallbacks in microsoft_graph_client.py
+    logger.info("⚡ Skipping dependency validation for maximum startup speed")
+    logger.info("📋 Calendar integration will auto-detect capabilities at runtime")
     
-    if graph_available and env_vars_available:
-        logger.info("🎯 PRODUCTION MODE: Real Microsoft Graph API will be used")
-    else:
-        logger.info("🧪 DEVELOPMENT MODE: Mock data will be used for calendar features")
-    
-    # Start the actual agent
+    # Start the actual agent immediately
     logger.info("Starting agent.py...")
     
     try:
-        # Import and run the agent
+        # OPTIMIZED: Direct import and start
         from agent import cli, WorkerOptions, entrypoint
         cli.run_app(
             WorkerOptions(

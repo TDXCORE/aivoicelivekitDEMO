@@ -203,8 +203,8 @@ Este enfoque transformará a Enrique en un consultor de inteligencia artificial 
         logger.info(f"👤 Contact: {self.contact_name}")
         
         try:
-            logger.info("⏳ Waiting 1 second for connection to stabilize...")
-            await asyncio.sleep(1)  # Faster response time for better user experience
+            logger.info("🚀 Starting conversation immediately for ultra-fast response...")
+            # REMOVED: asyncio.sleep(1) for <800ms latency optimization
             
             # Always greet immediately for both inbound and outbound
             greeting_msg = f"¡Hola! Habla Enrique de TDX. ¿Cómo está? Estoy llamando porque TDX está ayudando a empresas como {self.company_name} a transformar sus operaciones con inteligencia artificial. ¿Tiene un minuto para platicar?"
@@ -322,13 +322,11 @@ Este enfoque transformará a Enrique en un consultor de inteligencia artificial 
         """Check calendar availability using Microsoft Graph API with user feedback"""
         logger.info(f"checking availability for preferred: {preferred_date} {preferred_time}")
         
-        # NUEVO: Feedback inmediato al usuario
+        # OPTIMIZED: Direct availability check without delays
         await ctx.session.generate_reply(
-            instructions="Di exactamente en español: 'Solo un momento por favor mientras consulto la disponibilidad en el calendario.'"
+            instructions="Di exactamente en español: 'Consultando disponibilidad...' (muy rápido)"
         )
-        
-        # NUEVO: Pequeña pausa para que se escuche el mensaje
-        await asyncio.sleep(0.2)
+        # REMOVED: asyncio.sleep(0.2) for speed optimization
         
         try:
             # Define search range (next 7 days) - imports ya están al inicio
@@ -372,13 +370,11 @@ Este enfoque transformará a Enrique en un consultor de inteligencia artificial 
             f"scheduling {meeting_type} for {self.contact_name} ({email}) from {self.company_name} on {date} at {time}"
         )
         
-        # NUEVO: Feedback inmediato al usuario
+        # OPTIMIZED: Direct meeting creation without delays
         await ctx.session.generate_reply(
-            instructions="Di exactamente en español: 'Solo un momento por favor mientras creo la reunión en Teams y envío la invitación.'"
+            instructions="Di exactamente en español: 'Creando reunión...' (muy rápido)"
         )
-        
-        # NUEVO: Pequeña pausa para que se escuche el mensaje
-        await asyncio.sleep(0.2)
+        # REMOVED: asyncio.sleep(0.2) for speed optimization
         
         try:
             # Create meeting using Microsoft Graph API - import ya está al inicio
@@ -508,21 +504,21 @@ async def entrypoint(ctx: JobContext):
         call_direction=call_direction,
     )
 
-    # Use OpenAI Realtime API with OPTIMAL configuration for FAST speech + HIGH accuracy
+    # ULTRA-FAST configuration for <800ms end-to-end latency
     session = AgentSession(
         llm=openai.realtime.RealtimeModel(
-            model="gpt-4o-realtime-preview",
+            model="gpt-4o-mini-realtime-preview",  # FASTER: Mini model for speed
             voice="echo",  # Mejor para español
             turn_detection=TurnDetection(
-                type="server_vad",     # CAMBIO: server_vad es MÁS PRECISO que semantic_vad para emails
-                threshold=0.6,         # NUEVO: Más alto que default (0.5) para reducir ruido
-                silence_duration_ms=700,  # NUEVO: Más tiempo para emails largos (default 500ms)
-                prefix_padding_ms=200,    # NUEVO: Reducido de 300ms para mayor velocidad
+                type="server_vad",     # Server VAD for precision
+                threshold=0.4,         # OPTIMIZED: More sensitive for faster detection
+                silence_duration_ms=300,  # OPTIMIZED: Faster response (was 700ms)
+                prefix_padding_ms=100,    # OPTIMIZED: Minimal padding (was 200ms)
                 create_response=True,
                 interrupt_response=True,
             ),
-            temperature=0.6,  # CAMBIO: Más bajo para MÁXIMA precisión en emails
-            # REMOVIDO: input_audio_transcription causa error de compatibilidad
+            temperature=0.3,  # OPTIMIZED: Lower for faster, more deterministic responses
+            max_response_output_tokens=150,  # OPTIMIZED: Shorter responses for speed
         )
     )
 
@@ -538,8 +534,7 @@ async def entrypoint(ctx: JobContext):
                 session.start(agent=agent, room=ctx.room)
             )
             
-            # Give session a moment to initialize
-            await asyncio.sleep(0.5)
+            # OPTIMIZED: No delay for faster session initialization
             
             # Create SIP participant for outbound call
             sip_participant = await ctx.api.sip.create_sip_participant(

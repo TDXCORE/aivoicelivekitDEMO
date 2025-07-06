@@ -220,11 +220,11 @@ class MicrosoftGraphClient:
             event.is_online_meeting = True
             event.online_meeting_provider = OnlineMeetingProviderType.TeamsForBusiness
             
-            # CREAR el evento con timeout usando email específico
+            # OPTIMIZED: Fast timeout for <800ms latency
             user_email = os.getenv('USER_EMAIL', 'ventas@tdxcore.com')
             created_event = await asyncio.wait_for(
                 self.client.users.by_user_id(user_email).calendar.events.post(event),
-                timeout=10.0  # 10 second timeout
+                timeout=2.0  # OPTIMIZED: 2 second timeout (was 10s)
             )
             
             logger.info(f"✅ REAL Teams meeting created for {attendee_email} on {meeting_date} at {meeting_time}")
