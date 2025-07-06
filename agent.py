@@ -517,7 +517,7 @@ async def entrypoint(ctx: JobContext):
                 create_response=True,
                 interrupt_response=True,
             ),
-            temperature=0.3,  # OPTIMIZED: Lower for faster, more deterministic responses
+            temperature=0.6,  # FIXED: OpenAI minimum required value (was 0.3)
             # REMOVED: max_response_output_tokens (not supported by LiveKit RealtimeModel)
         )
     )
