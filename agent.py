@@ -518,7 +518,7 @@ async def entrypoint(ctx: JobContext):
                 interrupt_response=True,
             ),
             temperature=0.3,  # OPTIMIZED: Lower for faster, more deterministic responses
-            max_response_output_tokens=150,  # OPTIMIZED: Shorter responses for speed
+            # REMOVED: max_response_output_tokens (not supported by LiveKit RealtimeModel)
         )
     )
 
