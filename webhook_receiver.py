@@ -52,22 +52,23 @@ async def health_check():
         "timestamp": datetime.now().isoformat()
     }
 
-@app.post("/webhooks/chatwoot")
-async def chatwoot_webhook(request: Request):
+@app.post("/webhooks/chatwoot/{token}")
+async def chatwoot_webhook(request: Request, token: str):
     """
     Endpoint principal para recibir webhooks de Chatwoot
     Filtra eventos contact_created de landing_page y dispara llamadas
     """
     try:
-        # Validación de token de seguridad
-        auth_header = request.headers.get("authorization", "")
-        if not auth_header.startswith("Bearer "):
-            raise HTTPException(status_code=401, detail="Missing or invalid authorization header")
-        
-        token = auth_header.replace("Bearer ", "")
+        # Validación de token en URL (método recomendado por Chatwoot)
         if token != WEBHOOK_TOKEN:
-            logger.warning(f"Invalid webhook token attempted: {token[:10]}...")
+            logger.warning(f"Invalid webhook token in URL: {token[:10]}...")
             raise HTTPException(status_code=401, detail="Invalid webhook token")
+        
+        # Validación adicional por User-Agent (Chatwoot incluye esto)
+        user_agent = request.headers.get("user-agent", "")
+        if not user_agent.startswith("Chatwoot"):
+            logger.warning(f"Suspicious request - User-Agent: {user_agent}")
+            # No bloqueamos completamente, solo loggeamos para monitoreo
         
         # Obtener payload del webhook
         payload = await request.json()
