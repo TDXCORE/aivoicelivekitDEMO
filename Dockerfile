@@ -27,5 +27,5 @@ USER appuser
 # Expose port (Render uses PORT environment variable)
 EXPOSE ${PORT:-8000}
 
-# Run the webhook receiver
-CMD ["python", "start_webhook.py"]
+# Run the startup script (now handles webhook receiver)
+CMD ["python", "startup.py"]
