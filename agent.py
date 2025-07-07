@@ -201,21 +201,34 @@ Este enfoque transformará a Enrique en un consultor de inteligencia artificial 
         has_webhook_email = self.prospect_info.get("has_email", False)
         source = self.prospect_info.get("source", "")
         
+        # DEBUG: Log detallado para troubleshooting
+        logger.info(f"🔍 DEBUG - Greeting Generation:")
+        logger.info(f"   Contact Name: '{contact_name}'")
+        logger.info(f"   Has Email: {has_webhook_email}")
+        logger.info(f"   Source: '{source}'")
+        logger.info(f"   Full prospect_info: {self.prospect_info}")
+        
         # Personalizar saludo según origen
         if source == "landing_page":
             if contact_name and contact_name != "there":
                 greeting = f"¡Hola {contact_name}! Habla Enrique de TDX. Vi que se registró en nuestro sitio web mostrando interés en soluciones de inteligencia artificial."
+                logger.info(f"✅ Using personalized greeting with name: {contact_name}")
             else:
                 greeting = f"¡Hola! Habla Enrique de TDX. Vi que se registró en nuestro sitio web mostrando interés en soluciones de inteligencia artificial."
+                logger.info(f"⚠️ Using generic greeting - name issue: '{contact_name}'")
             
             if has_webhook_email:
                 greeting += " Tengo su información de contacto, así que podemos agendar una reunión rápidamente si le interesa. ¿Tiene un minuto para platicar?"
+                logger.info("✅ Added email context to greeting")
             else:
                 greeting += " ¿Tiene un minuto para platicar sobre cómo podemos ayudarle?"
+                logger.info("ℹ️ No email context added")
         else:
             # Saludo estándar para llamadas no-webhook
             greeting = f"¡Hola! Habla Enrique de TDX. ¿Cómo está? Estoy llamando porque TDX está ayudando a empresas como {self.company_name} a transformar sus operaciones con inteligencia artificial. ¿Tiene un minuto para platicar?"
+            logger.info(f"ℹ️ Using standard greeting - source: '{source}'")
         
+        logger.info(f"🎯 Final greeting: {greeting}")
         return greeting
 
     async def on_session_start(self, ctx: RunContext):
@@ -581,17 +594,17 @@ async def entrypoint(ctx: JobContext):
     # ULTRA-FAST configuration for <800ms end-to-end latency
     session = AgentSession(
         llm=openai.realtime.RealtimeModel(
-            model="gpt-4o-mini-realtime-preview",  # FASTER: Mini model for speed
+            model="gpt-4o-mini-realtime-preview",  # Keep same model as requested
             voice="echo",  # Mejor para español
             turn_detection=TurnDetection(
                 type="server_vad",     # Server VAD for precision
-                threshold=0.4,         # OPTIMIZED: More sensitive for faster detection
-                silence_duration_ms=300,  # OPTIMIZED: Faster response (was 700ms)
-                prefix_padding_ms=100,    # OPTIMIZED: Minimal padding (was 200ms)
+                threshold=0.3,         # OPTIMIZED: More sensitive (was 0.4)
+                silence_duration_ms=200,  # OPTIMIZED: Even faster response (was 300ms)
+                prefix_padding_ms=50,     # OPTIMIZED: Minimal padding (was 100ms)
                 create_response=True,
                 interrupt_response=True,
             ),
-            temperature=0.6,  # FIXED: OpenAI minimum required value (was 0.3)
+            temperature=0.6,  # Keep as requested
             # REMOVED: max_response_output_tokens (not supported by LiveKit RealtimeModel)
         )
     )

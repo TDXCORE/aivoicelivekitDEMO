@@ -93,6 +93,14 @@ async def create_outbound_call_from_webhook(contact_data):
     if contact_name == "there" or not contact_name:
         contact_name = "Prospecto"
     
+    # DEBUG: Log datos recibidos
+    print(f"🔍 DEBUG - Contact data received:")
+    print(f"   Name: '{contact_name}'")
+    print(f"   Email: '{contact_email}'")
+    print(f"   Phone: '{phone_number}'")
+    print(f"   Custom attrs: {custom_attrs}")
+    print(f"   Has email: {contact_data.get('has_email', False)}")
+    
     # Crear metadata optimizada para webhook
     metadata = {
         "phone_number": phone_number,
@@ -111,6 +119,9 @@ async def create_outbound_call_from_webhook(contact_data):
         "call_direction": "outbound",
         "source": "chatwoot_webhook"
     }
+    
+    print(f"🎯 DEBUG - Final metadata:")
+    print(f"   prospect_info: {metadata['prospect_info']}")
     
     try:
         # Crear room único para la llamada
