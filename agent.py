@@ -195,27 +195,77 @@ Este enfoque transformará a Enrique en un consultor de inteligencia artificial 
     def set_participant(self, participant: rtc.RemoteParticipant):
         self.participant = participant
 
+    def get_personalized_greeting(self):
+        """Generar saludo personalizado basado en datos del webhook"""
+        contact_name = self.contact_name
+        has_webhook_email = self.prospect_info.get("has_email", False)
+        source = self.prospect_info.get("source", "")
+        
+        # Personalizar saludo según origen
+        if source == "landing_page":
+            if contact_name and contact_name != "there":
+                greeting = f"¡Hola {contact_name}! Habla Enrique de TDX. Vi que se registró en nuestro sitio web mostrando interés en soluciones de inteligencia artificial."
+            else:
+                greeting = f"¡Hola! Habla Enrique de TDX. Vi que se registró en nuestro sitio web mostrando interés en soluciones de inteligencia artificial."
+            
+            if has_webhook_email:
+                greeting += " Tengo su información de contacto, así que podemos agendar una reunión rápidamente si le interesa. ¿Tiene un minuto para platicar?"
+            else:
+                greeting += " ¿Tiene un minuto para platicar sobre cómo podemos ayudarle?"
+        else:
+            # Saludo estándar para llamadas no-webhook
+            greeting = f"¡Hola! Habla Enrique de TDX. ¿Cómo está? Estoy llamando porque TDX está ayudando a empresas como {self.company_name} a transformar sus operaciones con inteligencia artificial. ¿Tiene un minuto para platicar?"
+        
+        return greeting
+
     async def on_session_start(self, ctx: RunContext):
         """Called when agent session starts - handle greeting based on call direction"""
         logger.info(f"🚀 Agent session started!")
         logger.info(f"📞 Call direction detected: {self.call_direction}")
         logger.info(f"🏢 Company: {self.company_name}")
         logger.info(f"👤 Contact: {self.contact_name}")
+        logger.info(f"📧 Has email: {self.prospect_info.get('has_email', False)}")
+        logger.info(f"🔗 Source: {self.prospect_info.get('source', 'manual')}")
         
         try:
             logger.info("🚀 Starting conversation immediately for ultra-fast response...")
             # REMOVED: asyncio.sleep(1) for <800ms latency optimization
             
-            # Always greet immediately for both inbound and outbound
-            greeting_msg = f"¡Hola! Habla Enrique de TDX. ¿Cómo está? Estoy llamando porque TDX está ayudando a empresas como {self.company_name} a transformar sus operaciones con inteligencia artificial. ¿Tiene un minuto para platicar?"
+            # Generar saludo personalizado
+            greeting_msg = self.get_personalized_greeting()
             
             logger.info(f"🎤 Sending greeting for {self.call_direction} call...")
             logger.info(f"💬 Greeting message: {greeting_msg}")
+            
+            # Instrucciones optimizadas para manejo de email
+            email_instructions = ""
+            if self.prospect_info.get("has_email", False):
+                email_instructions = """
+                IMPORTANTE - MANEJO DE EMAIL:
+                - Ya tienes el email del contacto en el sistema
+                - NO pidas el email - ve directo a consultar disponibilidad
+                - Cuando necesites agendar, usa el email que ya tienes
+                - Menciona que tienes su información de contacto
+                """
+            else:
+                email_instructions = """
+                IMPORTANTE - MANEJO DE EMAIL:
+                - Necesitarás recolectar el email para agendar
+                - Sigue el flujo normal de recolección de email
+                - Pide que lo deletreen letra por letra
+                """
             
             # Send greeting and enable continuous conversation
             await ctx.session.generate_reply(
                 instructions=f"""
                 VELOCIDAD: Habla MUY RÁPIDO como un vendedor experto y entusiasmado. Actúa como si tuvieras mucha energía y estuvieras emocionado por la llamada.
+                
+                {email_instructions}
+                
+                PERSONALIZACIÓN:
+                - SIEMPRE usa el nombre del contacto si lo tienes: {self.contact_name}
+                - Menciona que viste su registro en el sitio web si es de webhook
+                - Si tienes email, menciona que tienes su información de contacto
                 
                 Say this greeting exactly in Spanish: '{greeting_msg}'
                 
@@ -297,8 +347,22 @@ Este enfoque transformará a Enrique en un consultor de inteligencia artificial 
         email: str,
         spelled_out: str = "",
     ):
-        """Collect and verify prospect's email address with spelling confirmation"""
-        logger.info(f"collecting email: {email}, spelled out: {spelled_out}")
+        """Collect email - skip if already have from webhook"""
+        
+        # Verificar si ya tenemos email del webhook
+        webhook_email = self.prospect_info.get("email")
+        if webhook_email:
+            logger.info(f"Using webhook email: {webhook_email}")
+            return {
+                "email_collected": True,
+                "email": webhook_email,
+                "email_valid": True,
+                "needs_respelling": False,
+                "source": "webhook"
+            }
+        
+        # Flujo normal si no hay email del webhook
+        logger.info(f"collecting email from conversation: {email}, spelled out: {spelled_out}")
         
         # Basic email validation - import ya está al inicio del archivo
         email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
@@ -309,7 +373,8 @@ Este enfoque transformará a Enrique en un consultor de inteligencia artificial 
             "email": email.lower(),
             "spelled_verification": spelled_out,
             "email_valid": is_valid,
-            "needs_respelling": not is_valid
+            "needs_respelling": not is_valid,
+            "source": "conversation"
         }
 
     @function_tool()
@@ -365,10 +430,19 @@ Este enfoque transformará a Enrique en un consultor de inteligencia artificial 
         time: str,
         meeting_type: str = "discovery_call",
     ):
-        """Schedule meeting using Microsoft Graph API with user feedback"""
+        """Schedule meeting - use webhook email if available"""
+        
+        # Priorizar email del webhook
+        webhook_email = self.prospect_info.get("email")
+        final_email = webhook_email if webhook_email else email
+        
+        # Obtener nombre real del contacto
+        contact_name = self.contact_name if self.contact_name != "there" else "Prospecto"
+        
         logger.info(
-            f"scheduling {meeting_type} for {self.contact_name} ({email}) from {self.company_name} on {date} at {time}"
+            f"scheduling {meeting_type} for {contact_name} ({final_email}) from {self.company_name} on {date} at {time}"
         )
+        logger.info(f"Email source: {'webhook' if webhook_email else 'conversation'}")
         
         # OPTIMIZED: Direct meeting creation without delays
         await ctx.session.generate_reply(
@@ -379,10 +453,10 @@ Este enfoque transformará a Enrique en un consultor de inteligencia artificial 
         try:
             # Create meeting using Microsoft Graph API - import ya está al inicio
             result = await graph_client.create_meeting(
-                attendee_email=email,
+                attendee_email=final_email,
                 meeting_date=date,
                 meeting_time=time,
-                contact_name=self.contact_name,
+                contact_name=contact_name,
                 company_name=self.company_name,
                 meeting_type=meeting_type
             )
@@ -399,7 +473,7 @@ Este enfoque transformará a Enrique en un consultor de inteligencia artificial 
             return {
                 "meeting_scheduled": True,
                 "meeting_id": meeting_id,
-                "attendee_email": email,
+                "attendee_email": final_email,
                 "meeting_date": formatted_date,
                 "meeting_time": time,
                 "meeting_type": meeting_type,

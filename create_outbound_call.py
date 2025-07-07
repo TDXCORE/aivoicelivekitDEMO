@@ -74,6 +74,81 @@ async def create_outbound_call():
         traceback.print_exc()
         return None
 
+async def create_outbound_call_from_webhook(contact_data):
+    """Crear llamada outbound desde webhook de Chatwoot"""
+    
+    lk_api = api.LiveKitAPI(
+        url=os.getenv("LIVEKIT_URL"),
+        api_key=os.getenv("LIVEKIT_API_KEY"),
+        api_secret=os.getenv("LIVEKIT_API_SECRET")
+    )
+    
+    # Extraer datos del contacto
+    phone_number = contact_data.get("phone")
+    contact_name = contact_data.get("name", "Prospecto")
+    contact_email = contact_data.get("email")
+    custom_attrs = contact_data.get("custom_attributes", {})
+    
+    # Limpiar nombre para evitar problemas
+    if contact_name == "there" or not contact_name:
+        contact_name = "Prospecto"
+    
+    # Crear metadata optimizada para webhook
+    metadata = {
+        "phone_number": phone_number,
+        "dial_info": {
+            "phone_number": phone_number,
+            "transfer_to": "+18632190153"
+        },
+        "prospect_info": {
+            "company_name": custom_attrs.get("company", "Su empresa"),
+            "contact_name": contact_name,
+            "email": contact_email,
+            "has_email": contact_data.get("has_email", False),
+            "chatwoot_id": contact_data.get("id"),
+            "source": custom_attrs.get("source", "landing_page")
+        },
+        "call_direction": "outbound",
+        "source": "chatwoot_webhook"
+    }
+    
+    try:
+        # Crear room único para la llamada
+        random_suffix = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
+        room_name = f"webhook-{contact_data.get('id', 'unknown')}-{random_suffix}"
+        
+        print(f"📋 Creando llamada desde webhook de Chatwoot...")
+        print(f"👤 Contacto: {contact_name}")
+        print(f"📞 Número: {phone_number}")
+        print(f"📧 Email: {contact_email if contact_email else 'No proporcionado'}")
+        print(f"🏠 Room: {room_name}")
+        
+        # Crear dispatch para el agente
+        dispatch = await lk_api.agent_dispatch.create_dispatch(
+            api.CreateAgentDispatchRequest(
+                agent_name="tdx-sdr-bot",
+                room=room_name,
+                metadata=json.dumps(metadata)
+            )
+        )
+        
+        print(f"✅ Dispatch creado desde webhook!")
+        print(f"📋 Dispatch ID: {dispatch}")
+        print(f"🏠 Room: {room_name}")
+        print(f"🤖 Agente: tdx-sdr-bot")
+        
+        print(f"\n🎯 ¡Llamada outbound iniciada desde webhook!")
+        print(f"   El agente llamará a {contact_name} ({phone_number})")
+        print(f"   Personalización: {'Con email' if contact_email else 'Sin email'}")
+        
+        return room_name
+        
+    except Exception as e:
+        print(f"❌ Error creando llamada desde webhook: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
 if __name__ == "__main__":
     result = asyncio.run(create_outbound_call())
     if result:
