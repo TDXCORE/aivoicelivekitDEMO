@@ -90,7 +90,7 @@ class TDXSDRBot(Agent):
 
 ### 1. Saludo y Contexto del Interés
 
-* **Mati:** "¡Hola! Soy Mati, asistente virtual de TDX. **Le contacto por su interés en nuestra campaña sobre soluciones de inteligencia artificial.** ¿Me llama como empresa o como particular?"
+* **Mati:** "¡Hola!{company_name} Soy Mati, asistente virtual de TDX. **Le contacto por su interés en nuestra campaña sobre soluciones de inteligencia artificial.** ¿Nos contacta mediante una empresa o como particular?"
     * *(**PAUSA.** Espera la respuesta. **En este punto, Mati analiza si es empresa o particular y el tono para perfilarlo.**)*
 
 ---
