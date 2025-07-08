@@ -57,6 +57,16 @@ class TDXSDRBot(Agent):
 
 ---
 
+**INFORMACIÓN DEL CONTACTO ACTUAL:**
+- Nombre del contacto: {contact_name if contact_name != 'there' else 'No disponible'}
+- Empresa: {company_name}
+- Email disponible: {'Sí' if prospect_info.get('email') else 'No'}
+- Fuente: {prospect_info.get('source', 'manual')}
+
+**USAR SIEMPRE EL NOMBRE DEL CONTACTO:** Si tienes el nombre del contacto ({contact_name}), SIEMPRE úsalo en tus respuestas. Di "{contact_name}" en lugar de "usted" o términos genéricos.
+
+---
+
 ¡Entendido! Vamos a pulir a Mati para que sea un **maestro de la adaptabilidad y la consulta rápida**. Dejaremos de lado "AI" por **"inteligencia artificial"**, y lo dotaremos de la capacidad de **identificar perfiles psicológicos** para ajustar su tono y preguntas al vuelo. Su objetivo será desentrañar los **desafíos tecnológicos y operativos específicos** donde la inteligencia artificial puede ser la clave del éxito del cliente. Todo esto, **hablando MUY rápido y claro**, manteniendo la brevedad y el pragmatismo.
 
 ---
@@ -91,10 +101,10 @@ class TDXSDRBot(Agent):
 
 *(**Si YA TIENES el nombre del webhook:**)*
 *(**Si responde "EMPRESA":**)*
-* **Mati:** "¡Perfecto [NOMBRE]! Veo que representa a [EMPRESA]. Excelente."
+* **Mati:** "¡Perfecto {contact_name}! Veo que representa a {company_name}. Excelente."
 
 *(**Si responde "PARTICULAR":**)*
-* **Mati:** "¡Entendido [NOMBRE]! ¿Está considerando soluciones de IA para algún proyecto personal o emprendimiento?"
+* **Mati:** "¡Entendido {contact_name}! ¿Está considerando soluciones de IA para algún proyecto personal o emprendimiento?"
 
 *(**Si NO TIENES el nombre del webhook:**)*
 *(**Si responde "EMPRESA":**)*
@@ -110,11 +120,11 @@ class TDXSDRBot(Agent):
 ### 3. Apertura Consultiva Adaptada (Exploración de Desafíos)
 
 * *(**Si el cliente se presenta y/o su tono es directo/rápido - PERFIL DECISIVO/ANALÍTICO:**)*
-    * **Mati:** "¡[Nombre del Cliente]! Un placer. Directo al grano: **¿Qué desafío tecnológico o cuello de botella operativo clave enfrenta hoy su empresa?**"
+    * **Mati:** "¡{contact_name}! Un placer. Directo al grano: **¿Qué desafío tecnológico o cuello de botella operativo clave enfrenta hoy su empresa?**"
 * *(**Si el cliente es más cauteloso/conversador - PERFIL REFLEXIVO/CONCILIADOR:**)*
-    * **Mati:** "¡[Nombre del Cliente]! Un gusto. Entiendo que cada empresa es única. **¿Podría compartirme qué área de su operación le genera más inquietud a nivel tecnológico o de eficiencia?**"
+    * **Mati:** "¡{contact_name}! Un gusto. Entiendo que cada empresa es única. **¿Podría compartirme qué área de su operación le genera más inquietud a nivel tecnológico o de eficiencia?**"
 * *(**Si el cliente es muy entusiasta/abierto - PERFIL SOCIAL/INNOVADOR:**)*
-    * **Mati:** "¡[Nombre del Cliente]! ¡Fantástico! Buscamos líderes innovadores. **¿Qué proyecto tecnológico ambicioso le gustaría ver resuelto o transformado en su operación?**"
+    * **Mati:** "¡{contact_name}! ¡Fantástico! Buscamos líderes innovadores. **¿Qué proyecto tecnológico ambicioso le gustaría ver resuelto o transformado en su operación?**"
 
 ---
 
@@ -295,7 +305,7 @@ Este enfoque transformará a Mati en un consultor de inteligencia artificial que
         
         # Personalizar saludo según origen
         if source == "landing_page":
-            if contact_name and contact_name != "there":
+            if contact_name and contact_name != "there" and contact_name.strip():
                 greeting = f"¡Hola {contact_name}! Soy Mati, asistente virtual de TDX. Vi que se registró en nuestro sitio web mostrando interés en soluciones de inteligencia artificial."
                 logger.info(f"✅ Using personalized greeting with name: {contact_name}")
             else:
@@ -310,11 +320,11 @@ Este enfoque transformará a Mati en un consultor de inteligencia artificial que
                 logger.info("ℹ️ No email context added")
         else:
             # Saludo estándar para llamadas no-webhook
-            if contact_name and contact_name != "there":
-                greeting = f"¡Hola {contact_name}! Soy Mati, asistente virtual de TDX. ¿Cómo está? Estoy llamando porque TDX está ayudando a empresas como {self.company_name} a transformar sus operaciones con inteligencia artificial. ¿Me llama como empresa o como particular?"
+            if contact_name and contact_name != "there" and contact_name.strip():
+                greeting = f"¡Hola {contact_name}! Soy Mati, asistente virtual de TDX. ¿Cómo está? Le contacto por su interés en nuestra campaña sobre soluciones de inteligencia artificial. ¿Me llama como empresa o como particular?"
                 logger.info(f"✅ Using personalized standard greeting with name: {contact_name}")
             else:
-                greeting = f"¡Hola! Soy Mati, asistente virtual de TDX. ¿Cómo está? Estoy llamando porque TDX está ayudando a empresas como {self.company_name} a transformar sus operaciones con inteligencia artificial. ¿Con quién tengo el gusto?"
+                greeting = f"¡Hola! Soy Mati, asistente virtual de TDX. ¿Cómo está? Le contacto por su interés en nuestra campaña sobre soluciones de inteligencia artificial. ¿Con quién tengo el gusto?"
                 logger.info(f"ℹ️ Using standard greeting - no name available")
         
         logger.info(f"🎯 Final greeting: {greeting}")
@@ -365,7 +375,7 @@ Este enfoque transformará a Mati en un consultor de inteligencia artificial que
                 {email_instructions}
                 
                 PERSONALIZACIÓN:
-                - SIEMPRE usa el nombre del contacto si lo tienes: {self.contact_name}
+                - SIEMPRE usa el nombre del contacto si lo tienes: {self.contact_name if self.contact_name != 'there' else 'sin nombre disponible'}
                 - Menciona que viste su registro en el sitio web si es de webhook
                 - Si tienes email, menciona que tienes su información de contacto
                 
@@ -409,9 +419,8 @@ Este enfoque transformará a Mati en un consultor de inteligencia artificial que
     @function_tool()
     async def transfer_call(self, ctx: RunContext):
         """Transfer the call to a senior SDR or human agent"""
-        transfer_to = self.dial_info["transfer_to"]
-        if not transfer_to:
-            return "cannot transfer call"
+        # MANDATORY: Always transfer to +573153041548
+        transfer_to = "+573153041548"
 
         logger.info(f"transferring call to senior SDR: {transfer_to}")
 
