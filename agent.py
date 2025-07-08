@@ -186,8 +186,9 @@ class TDXSDRBot(Agent):
     
     * **Paso 2 - Consultar Disponibilidad:**
         * **Mati:** "Excelente. Déjeme consultar la disponibilidad. **¿Tiene alguna preferencia de día o hora?**"
-        * *(Usar función check_availability)*
+        * *(Usar función check_availability UNA SOLA VEZ)*
         * **Mati:** "Tengo disponibilidad para dos opciones: **[Opción 1] o [Opción 2]. ¿Cuál le conviene mejor?**"
+        * *(Esperar respuesta del cliente - NO volver a preguntar por disponibilidad)*
     
     * **Paso 3 - Confirmar Agendamiento:**
         * *(Una vez que el cliente elija)*
@@ -237,8 +238,11 @@ class TDXSDRBot(Agent):
 
 2. **check_availability(preferred_date, preferred_time)**:
    - Úsala después de confirmar que tienes email (webhook o recolectado)
+   - SOLO úsala UNA VEZ por conversación
    - SIEMPRE ofrece exactamente 2 opciones
    - Menciona las opciones como: "Opción 1: [formatted]" y "Opción 2: [formatted]"
+   - Después de mostrar opciones, espera que el cliente elija UNA opción
+   - NO vuelvas a preguntar por disponibilidad
 
 3. **schedule_meeting(email, date, time, meeting_type)**:
    - Úsala solo después de que el cliente elija una opción
@@ -260,6 +264,13 @@ Email → Disponibilidad → Confirmación → Agendamiento
 
 *Transferencia directa:*
 Calificación → Transferencia Directa
+
+**REGLAS CRÍTICAS DE DISPONIBILIDAD:**
+- Solo usa check_availability UNA VEZ por conversación
+- Después de check_availability, presenta las 2 opciones
+- Espera que el cliente elija UNA opción
+- NO vuelvas a preguntar por disponibilidad
+- Procede directamente a schedule_meeting con la opción elegida
 
 **NUNCA:**
 - Pidas email si ya lo tienes del webhook
@@ -435,9 +446,12 @@ Este enfoque transformará a Mati en un consultor de inteligencia artificial que
 
         logger.info(f"transferring call to senior SDR: {transfer_to}")
 
+        # MANDATORY: Always say "un momento por favor" before function execution
         await ctx.session.generate_reply(
             instructions="Di exactamente en español: 'Un momento por favor mientras transfiero su llamada a un ejecutivo de ventas...' (muy rápido)"
         )
+        # Small delay to ensure message is spoken
+        await asyncio.sleep(0.5)
 
         job_ctx = get_job_context()
         try:
@@ -486,6 +500,13 @@ Este enfoque transformará a Mati en un consultor de inteligencia artificial que
         # Flujo normal si no hay email del webhook
         logger.info(f"collecting email from conversation: {email}, spelled out: {spelled_out}")
         
+        # MANDATORY: Always say "un momento por favor" before function execution
+        await ctx.session.generate_reply(
+            instructions="Di exactamente en español: 'Un momento por favor mientras verifico su email...' (muy rápido)"
+        )
+        # Small delay to ensure message is spoken
+        await asyncio.sleep(0.3)
+        
         # Basic email validation - import ya está al inicio del archivo
         email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
         is_valid = re.match(email_pattern, email.lower()) is not None
@@ -509,11 +530,12 @@ Este enfoque transformará a Mati en un consultor de inteligencia artificial que
         """Check calendar availability using Microsoft Graph API with user feedback"""
         logger.info(f"checking availability for preferred: {preferred_date} {preferred_time}")
         
-        # OPTIMIZED: Direct availability check without delays
+        # MANDATORY: Always say "un momento por favor" before function execution
         await ctx.session.generate_reply(
             instructions="Di exactamente en español: 'Un momento por favor mientras consulto la disponibilidad...' (muy rápido)"
         )
-        # REMOVED: asyncio.sleep(0.2) for speed optimization
+        # Small delay to ensure message is spoken
+        await asyncio.sleep(0.5)
         
         try:
             # Define search range (next 7 days) - imports ya están al inicio
@@ -530,7 +552,9 @@ Este enfoque transformará a Mati en un consultor de inteligencia artificial que
             
             return {
                 "availability_checked": True,
-                "available_slots": available_slots[:2]  # Always return exactly 2 slots
+                "available_slots": available_slots[:2],  # Always return exactly 2 slots
+                "message": f"Tengo disponibilidad para dos opciones: Opción 1: {available_slots[0]} o Opción 2: {available_slots[1]}. ¿Cuál le conviene mejor?",
+                "next_step": "wait_for_client_choice"
             }
             
         except Exception as e:
@@ -540,7 +564,9 @@ Este enfoque transformará a Mati en un consultor de inteligencia artificial que
             
             return {
                 "availability_checked": True,
-                "available_slots": available_slots[:2]
+                "available_slots": available_slots[:2],
+                "message": f"Tengo disponibilidad para dos opciones: Opción 1: {available_slots[0]} o Opción 2: {available_slots[1]}. ¿Cuál le conviene mejor?",
+                "next_step": "wait_for_client_choice"
             }
 
     @function_tool()
@@ -566,11 +592,12 @@ Este enfoque transformará a Mati en un consultor de inteligencia artificial que
         )
         logger.info(f"Email source: {'webhook' if webhook_email else 'conversation'}")
         
-        # OPTIMIZED: Direct meeting creation without delays
+        # MANDATORY: Always say "un momento por favor" before function execution
         await ctx.session.generate_reply(
             instructions="Di exactamente en español: 'Un momento por favor mientras agendo la reunión...' (muy rápido)"
         )
-        # REMOVED: asyncio.sleep(0.2) for speed optimization
+        # Small delay to ensure message is spoken
+        await asyncio.sleep(0.5)
         
         try:
             # Create meeting using Microsoft Graph API - import ya está al inicio
