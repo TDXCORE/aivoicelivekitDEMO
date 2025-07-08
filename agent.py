@@ -65,6 +65,13 @@ class TDXSDRBot(Agent):
 
 **USAR SIEMPRE EL NOMBRE DEL CONTACTO:** Si tienes el nombre del contacto ({contact_name}), SIEMPRE úsalo en tus respuestas. Di "{contact_name}" en lugar de "usted" o términos genéricos.
 
+**MANEJO CRÍTICO DE EMAIL:**
+- Si tienes email del webhook: {'SÍ' if prospect_info.get('email') else 'NO'}
+- Email del webhook: {prospect_info.get('email', 'N/A')}
+- NUNCA pidas email si ya lo tienes del webhook
+- Si tienes email, di: "Tengo su email [EMAIL] de nuestro sistema"
+- Solo usa collect_email si NO tienes email del webhook
+
 ---
 
 ¡Entendido! Vamos a pulir a Mati para que sea un **maestro de la adaptabilidad y la consulta rápida**. Dejaremos de lado "AI" por **"inteligencia artificial"**, y lo dotaremos de la capacidad de **identificar perfiles psicológicos** para ajustar su tono y preguntas al vuelo. Su objetivo será desentrañar los **desafíos tecnológicos y operativos específicos** donde la inteligencia artificial puede ser la clave del éxito del cliente. Todo esto, **hablando MUY rápido y claro**, manteniendo la brevedad y el pragmatismo.
@@ -222,8 +229,9 @@ class TDXSDRBot(Agent):
 **FUNCIONES EN ORDEN INTELIGENTE:**
 
 1. **collect_email(email, spelled_out)**: 
-   - **SOLO úsala si NO tienes email del webhook**
-   - Si ya tienes email, menciona: "Tengo su email [EMAIL] de nuestro sistema"
+   - **CRÍTICO: SOLO úsala si NO tienes email del webhook**
+   - **ANTES DE USAR:** Verifica si tienes email del webhook
+   - Si ya tienes email, menciona: "Tengo su email {prospect_info.get('email', '')} de nuestro sistema"
    - Si no tienes email, SIEMPRE pide que lo deletreen: "¿Podría deletreármelo letra por letra?"
    - Si email_valid=False, pide que lo repitan
 
@@ -234,7 +242,7 @@ class TDXSDRBot(Agent):
 
 3. **schedule_meeting(email, date, time, meeting_type)**:
    - Úsala solo después de que el cliente elija una opción
-   - Usa el email del webhook O el recolectado
+   - **PRIORIDAD:** Usa el email del webhook PRIMERO, luego el recolectado
    - SIEMPRE confirma: "Agendado para [fecha] a las [hora]"
 
 4. **transfer_call()**:
@@ -293,7 +301,8 @@ Este enfoque transformará a Mati en un consultor de inteligencia artificial que
     def get_personalized_greeting(self):
         """Generar saludo personalizado basado en datos del webhook"""
         contact_name = self.contact_name
-        has_webhook_email = self.prospect_info.get("has_email", False)
+        webhook_email = self.prospect_info.get("email")
+        has_webhook_email = bool(webhook_email) or self.prospect_info.get("has_email", False)
         source = self.prospect_info.get("source", "")
         
         # DEBUG: Log detallado para troubleshooting
@@ -350,20 +359,22 @@ Este enfoque transformará a Mati en un consultor de inteligencia artificial que
             logger.info(f"💬 Greeting message: {greeting_msg}")
             
             # Instrucciones optimizadas para manejo de email
-            email_instructions = ""
-            if self.prospect_info.get("has_email", False):
-                email_instructions = """
-                IMPORTANTE - MANEJO DE EMAIL:
-                - Ya tienes el email del contacto en el sistema
-                - NO pidas el email - ve directo a consultar disponibilidad
-                - Cuando necesites agendar, usa el email que ya tienes
-                - Menciona que tienes su información de contacto
+            webhook_email = self.prospect_info.get("email")
+            if webhook_email:
+                email_instructions = f"""
+                🚨 CRÍTICO - MANEJO DE EMAIL:
+                - YA TIENES EL EMAIL DEL CONTACTO: {webhook_email}
+                - NUNCA pidas el email al cliente
+                - Cuando necesites agendar, di: "Tengo su email {webhook_email} de nuestro sistema"
+                - Ve directo a consultar disponibilidad con check_availability
+                - NO uses collect_email - ya tienes el email
                 """
             else:
                 email_instructions = """
                 IMPORTANTE - MANEJO DE EMAIL:
+                - NO tienes email del webhook
                 - Necesitarás recolectar el email para agendar
-                - Sigue el flujo normal de recolección de email
+                - Usa collect_email función
                 - Pide que lo deletreen letra por letra
                 """
             
