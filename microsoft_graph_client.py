@@ -171,8 +171,13 @@ class MicrosoftGraphClient:
             return self._create_mock_meeting(attendee_email, meeting_date, meeting_time, contact_name)
         
         try:
-            # Parse date and time
-            meeting_datetime = datetime.strptime(f"{meeting_date} {meeting_time}", "%Y-%m-%d %I:%M %p")
+            # Parse date and time - handle both 24-hour and 12-hour formats
+            try:
+                # Try 12-hour format first (e.g., "3:00 PM")
+                meeting_datetime = datetime.strptime(f"{meeting_date} {meeting_time}", "%Y-%m-%d %I:%M %p")
+            except ValueError:
+                # Fallback to 24-hour format (e.g., "15:00")
+                meeting_datetime = datetime.strptime(f"{meeting_date} {meeting_time}", "%Y-%m-%d %H:%M")
             end_datetime = meeting_datetime + timedelta(minutes=30)
             
             # NUEVO: Crear evento con Teams automático usando imports correctos
