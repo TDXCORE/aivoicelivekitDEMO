@@ -160,6 +160,32 @@ class TDXSDRBot(Agent):
 
 **EFICIENCIA MÁXIMA:** Cuanta más información tengas, más rápido cierras la venta.
 
+## DETECCIÓN DE SOLICITUDES DE TRANSFERENCIA - CRÍTICO
+
+**KEYWORDS QUE ACTIVAN TRANSFERENCIA INMEDIATA:**
+- "ejecutivo", "vendedor", "asesor", "consultor", "especialista"
+- "hablar con alguien", "persona real", "humano", "representante"
+- "gerente", "director", "supervisor", "jefe"
+- "experto", "técnico", "ingeniero"
+- "quiero hablar con", "me conecta con", "transfiere"
+- "no quiero bot", "quiero persona", "alguien más"
+
+**ACCIÓN INMEDIATA:**
+Si el cliente dice CUALQUIERA de estas palabras, DEBES:
+1. Decir: "Un momento por favor mientras transfiero su llamada a un ejecutivo de ventas..."
+2. Usar la función transfer_call() INMEDIATAMENTE
+3. NO preguntar más, NO explicar, TRANSFERIR
+
+**EJEMPLO CORRECTO:**
+Cliente: "¿Puedo hablar con un ejecutivo?"
+Mati: "Un momento por favor mientras transfiero su llamada a un ejecutivo de ventas..."
+*[ejecutar transfer_call()]*
+
+**EJEMPLO INCORRECTO:**
+Cliente: "¿Puedo hablar con un ejecutivo?"
+Mati: "¿Prefiere una reunión o que lo transfiera?"
+*[NO hacer esto - transferir inmediatamente]*
+
 """
         )
         self.participant: rtc.RemoteParticipant | None = None
@@ -222,6 +248,10 @@ class TDXSDRBot(Agent):
         logger.info(f"📧 Has email: {self.prospect_info.get('has_email', False)}")
         logger.info(f"🔗 Source: {self.prospect_info.get('source', 'manual')}")
         
+        # Initialize conversation tracking
+        self.conversation_log = []
+        self.turn_counter = 0
+        
         try:
             logger.info("🚀 Starting conversation immediately for ultra-fast response...")
             # REMOVED: asyncio.sleep(1) for <800ms latency optimization
@@ -266,16 +296,16 @@ class TDXSDRBot(Agent):
                 
                 Say this greeting exactly in Spanish: '{greeting_msg}'
                 
-                After greeting, CONTINUE the conversation by:
-                1. Listening actively to their response
-                2. Following the MANDATORY CALL FLOW in your instructions
-                3. Asking follow-up questions based on their answers
-                4. Being conversational and natural - don't end the call
-                5. If they say yes to meeting, use the schedule_meeting tool
-                6. If they want to transfer, use the transfer_call tool
-                7. Keep the conversation going until they explicitly hang up or you've scheduled a meeting
+                IMPORTANTE: Después del saludo, NO vuelvas a saludar. Continúa la conversación siguiendo el flujo:
+                1. Escucha activamente su respuesta
+                2. Sigue el FLUJO OBLIGATORIO en tus instrucciones
+                3. Haz preguntas de seguimiento basadas en sus respuestas
+                4. Sé conversacional y natural - no termines la llamada
+                5. Si dicen que sí a reunión, usa la herramienta schedule_meeting
+                6. Si quieren transferir, usa la herramienta transfer_call
+                7. Mantén la conversación hasta que cuelguen o hayas agendado una reunión
                 
-                REMEMBER: This is a sales conversation, not a one-time announcement. Engage fully!
+                RECUERDA: Esta es una conversación de ventas, no un anuncio único. ¡Participa completamente!
                 """
             )
             
@@ -293,6 +323,68 @@ class TDXSDRBot(Agent):
                 logger.info("✅ Fallback greeting sent!")
             except Exception as fallback_error:
                 logger.error(f"❌ Fallback greeting also failed: {fallback_error}")
+
+    async def on_speech_received(self, ctx: RunContext, speech_data):
+        """Handle incoming speech transcription for logging"""
+        try:
+            transcript = speech_data.get('transcript', '') if hasattr(speech_data, 'get') else str(speech_data)
+            self.turn_counter += 1
+            
+            # Log STT transcription
+            logger.info(f"🎤 STT [Turn {self.turn_counter}]: {transcript}")
+            
+            # Add to conversation log
+            self.conversation_log.append({
+                'turn': self.turn_counter,
+                'type': 'user_speech',
+                'content': transcript,
+                'timestamp': datetime.now().isoformat()
+            })
+            
+        except Exception as e:
+            logger.error(f"Error logging speech: {e}")
+    
+    async def on_response_generated(self, ctx: RunContext, response):
+        """Handle LLM response generation for logging"""
+        try:
+            response_text = response.get('text', '') if hasattr(response, 'get') else str(response)
+            
+            # Log LLM response
+            logger.info(f"🤖 LLM [Turn {self.turn_counter}]: {response_text}")
+            
+            # Add to conversation log
+            self.conversation_log.append({
+                'turn': self.turn_counter,
+                'type': 'bot_response',
+                'content': response_text,
+                'timestamp': datetime.now().isoformat()
+            })
+            
+        except Exception as e:
+            logger.error(f"Error logging response: {e}")
+    
+    async def on_session_end(self, ctx: RunContext):
+        """Handle session ending with full conversation log"""
+        try:
+            logger.info("🏁 Session ended - Full conversation log:")
+            for entry in self.conversation_log:
+                logger.info(f"  📝 {entry['type']} [Turn {entry['turn']}] ({entry['timestamp']}): {entry['content']}")
+            
+            # Export conversation log (could be sent to external service)
+            conversation_summary = {
+                'call_direction': self.call_direction,
+                'contact_name': self.contact_name,
+                'company_name': self.company_name,
+                'prospect_info': self.prospect_info,
+                'total_turns': self.turn_counter,
+                'conversation': self.conversation_log,
+                'session_end_time': datetime.now().isoformat()
+            }
+            
+            logger.info(f"📊 Conversation Summary: {json.dumps(conversation_summary, indent=2)}")
+            
+        except Exception as e:
+            logger.error(f"Error in session end logging: {e}")
 
     async def hangup(self):
         """Helper function to hang up the call by deleting the room"""
@@ -516,6 +608,13 @@ class TDXSDRBot(Agent):
             f"qualifying prospect {self.contact_name}: Budget={budget_range}, Authority={authority_level}, Need={need_urgency}, Timeline={timeline}"
         )
         
+        # MANDATORY: Always say "un momento por favor" before function execution
+        await ctx.session.generate_reply(
+            instructions="Di exactamente en español: 'Un momento por favor mientras evalúo su perfil...' (muy rápido)"
+        )
+        # Small delay to ensure message is spoken
+        await asyncio.sleep(0.3)
+        
         # Score qualification
         score = 0
         if budget_range in ['50k-100k', '100k+']:
@@ -550,6 +649,14 @@ class TDXSDRBot(Agent):
     async def detected_answering_machine(self, ctx: RunContext):
         """Called when the call reaches voicemail"""
         logger.info(f"detected answering machine for {self.participant.identity}")
+        
+        # MANDATORY: Always say "un momento por favor" before function execution
+        await ctx.session.generate_reply(
+            instructions="Di exactamente en español: 'Un momento por favor mientras dejo el mensaje...' (muy rápido)"
+        )
+        # Small delay to ensure message is spoken
+        await asyncio.sleep(0.3)
+        
         await ctx.session.generate_reply(
             instructions=f"Leave a professional voicemail: Hi {self.contact_name}, this is from TDX. I'm calling regarding AI solutions that could help {self.company_name}. I'll follow up via email. Have a great day!"
         )
