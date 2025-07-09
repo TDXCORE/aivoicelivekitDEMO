@@ -277,39 +277,18 @@ class MicrosoftGraphClient:
     async def close(self):
         """Close the Microsoft Graph client and clean up resources"""
         try:
-            if self.client:
-                # Close the underlying HTTP client if it has a close method
-                if hasattr(self.client, 'close') and callable(getattr(self.client, 'close', None)):
-                    close_method = getattr(self.client, 'close')
-                    if asyncio.iscoroutinefunction(close_method):
-                        await close_method()
-                    else:
-                        close_method()
-                elif hasattr(self.client, '_http_client') and hasattr(self.client._http_client, 'close'):
-                    close_method = getattr(self.client._http_client, 'close')
-                    if asyncio.iscoroutinefunction(close_method):
-                        await close_method()
-                    else:
-                        close_method()
-                
-            if self._credential:
-                # Close credential's HTTP client if available
-                if hasattr(self._credential, 'close') and callable(getattr(self._credential, 'close', None)):
-                    close_method = getattr(self._credential, 'close')
-                    if asyncio.iscoroutinefunction(close_method):
-                        await close_method()
-                    else:
-                        close_method()
-                elif hasattr(self._credential, '_http_client') and hasattr(self._credential._http_client, 'close'):
-                    close_method = getattr(self._credential._http_client, 'close')
-                    if asyncio.iscoroutinefunction(close_method):
-                        await close_method()
-                    else:
-                        close_method()
-                    
-            logger.info("✅ Microsoft Graph client closed successfully")
+            # Simple cleanup - just log the attempt and don't try to close anything
+            # The Microsoft Graph SDK doesn't have proper async close methods
+            if self.client or self._credential:
+                logger.info("🔄 Cleaning up Microsoft Graph client resources (no-op)")
+            
+            # Set references to None to help with garbage collection
+            self.client = None
+            self._credential = None
+            
+            logger.info("✅ Microsoft Graph client cleaned up successfully")
         except Exception as e:
-            logger.error(f"Error closing Microsoft Graph client: {e}")
+            logger.error(f"Error cleaning up Microsoft Graph client: {e}")
     
     async def __aenter__(self):
         """Async context manager entry"""

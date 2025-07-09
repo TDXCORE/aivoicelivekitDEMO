@@ -661,62 +661,106 @@ async def entrypoint(ctx: JobContext):
         )
     )
 
-    # Register event handlers for comprehensive logging
-    @session.on("user_speech_committed")
-    def on_user_speech_committed(event):
+    # Register event handlers for comprehensive logging with correct event names
+    @session.on("user_input_transcribed")
+    def on_user_input_transcribed(event):
         try:
             agent.turn_counter += 1
-            transcript = event.user_transcript
-            logger.info(f"🎤 STT [Turn {agent.turn_counter}]: {transcript}")
+            transcript = event.transcript
+            is_final = getattr(event, 'is_final', True)
+            
+            logger.info(f"🎤 STT [Turn {agent.turn_counter}] (Final: {is_final}): {transcript}")
+            
+            # Only log final transcripts to conversation log
+            if is_final:
+                agent.conversation_log.append({
+                    'turn': agent.turn_counter,
+                    'type': 'user_speech',
+                    'content': transcript,
+                    'timestamp': datetime.now().isoformat()
+                })
+        except Exception as e:
+            logger.error(f"Error logging user input: {e}")
+
+    @session.on("conversation_item_added")
+    def on_conversation_item_added(event):
+        try:
+            role = event.item.role
+            text_content = getattr(event.item, 'text_content', str(event.item))
+            interrupted = getattr(event.item, 'interrupted', False)
+            
+            if role == "user":
+                logger.info(f"🎤 User [Turn {agent.turn_counter}]: {text_content}")
+            elif role == "assistant":
+                logger.info(f"🤖 Assistant [Turn {agent.turn_counter}]: {text_content}")
             
             # Add to conversation log
             agent.conversation_log.append({
                 'turn': agent.turn_counter,
-                'type': 'user_speech',
-                'content': transcript,
+                'type': f'{role}_message',
+                'content': text_content,
+                'interrupted': interrupted,
                 'timestamp': datetime.now().isoformat()
             })
         except Exception as e:
-            logger.error(f"Error logging speech: {e}")
+            logger.error(f"Error logging conversation item: {e}")
 
-    @session.on("agent_speech_committed")
-    def on_agent_speech_committed(event):
+    @session.on("agent_state_changed")
+    def on_agent_state_changed(event):
         try:
-            response_text = event.agent_transcript
-            logger.info(f"🤖 LLM [Turn {agent.turn_counter}]: {response_text}")
-            
-            # Add to conversation log
-            agent.conversation_log.append({
-                'turn': agent.turn_counter,
-                'type': 'bot_response',
-                'content': response_text,
-                'timestamp': datetime.now().isoformat()
-            })
+            state = getattr(event, 'state', 'unknown')
+            logger.info(f"🤖 Agent state changed to: {state}")
         except Exception as e:
-            logger.error(f"Error logging response: {e}")
+            logger.error(f"Error logging agent state change: {e}")
 
-    @session.on("session_finished")
-    def on_session_finished():
+    @session.on("function_tools_executed")
+    def on_function_tools_executed(event):
         try:
-            logger.info("🏁 Session ended - Full conversation log:")
+            tool_name = getattr(event, 'tool_name', 'unknown')
+            result = getattr(event, 'result', 'unknown')
+            logger.info(f"🔧 Function tool executed: {tool_name} - Result: {result}")
+        except Exception as e:
+            logger.error(f"Error logging function tool execution: {e}")
+
+    @session.on("speech_created")
+    def on_speech_created(event):
+        try:
+            text = getattr(event, 'text', getattr(event, 'content', 'unknown'))
+            logger.info(f"🗣️ Speech created: {text}")
+        except Exception as e:
+            logger.error(f"Error logging speech creation: {e}")
+
+    @session.on("close")
+    def on_session_close(event):
+        try:
+            logger.info("🏁 Session closed - Full conversation log:")
             for entry in agent.conversation_log:
-                logger.info(f"  📝 {entry['type']} [Turn {entry['turn']}] ({entry['timestamp']}): {entry['content']}")
+                logger.info(f"  📝 {entry['type']} [Turn {entry.get('turn', 'N/A')}] ({entry['timestamp']}): {entry['content']}")
             
-            # Export conversation log (could be sent to external service)
+            # Export conversation log
             conversation_summary = {
                 'call_direction': agent.call_direction,
                 'contact_name': agent.contact_name,
                 'company_name': agent.company_name,
                 'prospect_info': agent.prospect_info,
+                'conversation_log': agent.conversation_log,
                 'total_turns': agent.turn_counter,
-                'conversation': agent.conversation_log,
                 'session_end_time': datetime.now().isoformat()
             }
             
-            logger.info(f"📊 Conversation Summary: {json.dumps(conversation_summary, indent=2)}")
+            logger.info(f"📊 Session Summary: {json.dumps(conversation_summary, indent=2)}")
             
         except Exception as e:
-            logger.error(f"Error in session end logging: {e}")
+            logger.error(f"Error logging session close: {e}")
+
+    # Add debug event handler to catch any events we might be missing
+    @session.on("*")
+    def on_any_event(event_name, event):
+        try:
+            if event_name not in ["user_input_transcribed", "conversation_item_added", "agent_state_changed", "close", "function_tools_executed", "speech_created"]:
+                logger.info(f"🔍 DEBUG - Unhandled event: {event_name} - Event: {event}")
+        except Exception as e:
+            logger.error(f"Error in debug event handler: {e}")
 
     # Check if this is an outbound call (phone number in metadata)
     outbound_phone = dial_info.get("phone_number") if call_direction == "outbound" else None
