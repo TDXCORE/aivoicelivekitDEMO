@@ -23,25 +23,23 @@ async def create_outbound_call():
     )
     
     try:
-    
-    # Datos de la llamada
-    phone_number = "+573108777663"
-    
-    # Metadata según documentación LiveKit
-    metadata = {
-        "phone_number": phone_number,
-        "dial_info": {
+        # Datos de la llamada
+        phone_number = "+573108777663"
+        
+        # Metadata según documentación LiveKit
+        metadata = {
             "phone_number": phone_number,
-            "transfer_to": "+18632190153"
-        },
-        "prospect_info": {
-            "company_name": "Empresa Test Colombia",
-            "contact_name": "Contacto Prueba"
-        },
-        "call_direction": "outbound"
-    }
-    
-    try:
+            "dial_info": {
+                "phone_number": phone_number,
+                "transfer_to": "+18632190153"
+            },
+            "prospect_info": {
+                "company_name": "Empresa Test Colombia",
+                "contact_name": "Contacto Prueba"
+            },
+            "call_direction": "outbound"
+        }
+        
         # 1. Crear room único para la llamada
         random_suffix = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
         room_name = f"outbound-{random_suffix}"
@@ -92,48 +90,46 @@ async def create_outbound_call_from_webhook(contact_data):
     )
     
     try:
-    
-    # Extraer datos del contacto
-    phone_number = contact_data.get("phone")
-    contact_name = contact_data.get("name", "Prospecto")
-    contact_email = contact_data.get("email")
-    custom_attrs = contact_data.get("custom_attributes", {})
-    
-    # Limpiar nombre para evitar problemas
-    if contact_name == "there" or not contact_name:
-        contact_name = "Prospecto"
-    
-    # DEBUG: Log datos recibidos
-    print(f"🔍 DEBUG - Contact data received:")
-    print(f"   Name: '{contact_name}'")
-    print(f"   Email: '{contact_email}'")
-    print(f"   Phone: '{phone_number}'")
-    print(f"   Custom attrs: {custom_attrs}")
-    print(f"   Has email: {contact_data.get('has_email', False)}")
-    
-    # Crear metadata optimizada para webhook
-    metadata = {
-        "phone_number": phone_number,
-        "dial_info": {
+        # Extraer datos del contacto
+        phone_number = contact_data.get("phone")
+        contact_name = contact_data.get("name", "Prospecto")
+        contact_email = contact_data.get("email")
+        custom_attrs = contact_data.get("custom_attributes", {})
+        
+        # Limpiar nombre para evitar problemas
+        if contact_name == "there" or not contact_name:
+            contact_name = "Prospecto"
+        
+        # DEBUG: Log datos recibidos
+        print(f"🔍 DEBUG - Contact data received:")
+        print(f"   Name: '{contact_name}'")
+        print(f"   Email: '{contact_email}'")
+        print(f"   Phone: '{phone_number}'")
+        print(f"   Custom attrs: {custom_attrs}")
+        print(f"   Has email: {contact_data.get('has_email', False)}")
+        
+        # Crear metadata optimizada para webhook
+        metadata = {
             "phone_number": phone_number,
-            "transfer_to": "+18632190153"
-        },
-        "prospect_info": {
-            "company_name": custom_attrs.get("company", "Su empresa"),
-            "contact_name": contact_name,
-            "email": contact_email,
-            "has_email": contact_data.get("has_email", False),
-            "chatwoot_id": contact_data.get("id"),
-            "source": custom_attrs.get("source", "landing_page")
-        },
-        "call_direction": "outbound",
-        "source": "chatwoot_webhook"
-    }
-    
-    print(f"🎯 DEBUG - Final metadata:")
-    print(f"   prospect_info: {metadata['prospect_info']}")
-    
-    try:
+            "dial_info": {
+                "phone_number": phone_number,
+                "transfer_to": "+18632190153"
+            },
+            "prospect_info": {
+                "company_name": custom_attrs.get("company", "Su empresa"),
+                "contact_name": contact_name,
+                "email": contact_email,
+                "has_email": contact_data.get("has_email", False),
+                "chatwoot_id": contact_data.get("id"),
+                "source": custom_attrs.get("source", "landing_page")
+            },
+            "call_direction": "outbound",
+            "source": "chatwoot_webhook"
+        }
+        
+        print(f"🎯 DEBUG - Final metadata:")
+        print(f"   prospect_info: {metadata['prospect_info']}")
+        
         # Crear room único para la llamada
         random_suffix = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
         room_name = f"webhook-{contact_data.get('id', 'unknown')}-{random_suffix}"
