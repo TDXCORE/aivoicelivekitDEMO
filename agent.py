@@ -455,14 +455,21 @@ Este enfoque transformará a Mati en un consultor de inteligencia artificial que
 
         job_ctx = get_job_context()
         try:
-            await job_ctx.api.sip.transfer_sip_participant(
-                api.TransferSIPParticipantRequest(
-                    room_name=job_ctx.room.name,
-                    participant_identity=self.participant.identity,
-                    transfer_to=f"tel:{transfer_to}",
-                )
+            # Add timeout to prevent hanging transfers
+            await asyncio.wait_for(
+                job_ctx.api.sip.transfer_sip_participant(
+                    api.TransferSIPParticipantRequest(
+                        room_name=job_ctx.room.name,
+                        participant_identity=self.participant.identity,
+                        transfer_to=f"tel:{transfer_to}",
+                    )
+                ),
+                timeout=30.0  # 30 second timeout for transfer operations
             )
             logger.info(f"transferred call to {transfer_to}")
+        except asyncio.TimeoutError:
+            logger.error(f"transfer call timeout exceeded (30s) for {transfer_to}")
+            await self.hangup()
         except Exception as e:
             logger.error(f"error transferring call: {e}")
             await self.hangup()

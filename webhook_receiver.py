@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 
 # Importar función de creación de llamadas
 from create_outbound_call import create_outbound_call_from_webhook
+from microsoft_graph_client import graph_client
 
 # Cargar variables de entorno
 load_dotenv(dotenv_path=".env.local")
@@ -176,3 +177,13 @@ if __name__ == "__main__":
         reload=True,
         log_level="info"
     )
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Clean up resources on shutdown"""
+    logger.info("🔄 Shutting down webhook receiver...")
+    try:
+        await graph_client.close()
+        logger.info("✅ Resources cleaned up successfully")
+    except Exception as e:
+        logger.error(f"Error during cleanup: {e}")

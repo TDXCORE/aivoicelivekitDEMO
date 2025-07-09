@@ -25,6 +25,7 @@ class MicrosoftGraphClient:
     def __init__(self):
         self.client = None
         self.user_id = "me"  # Use authenticated user's calendar
+        self._credential = None  # Store credential for cleanup
         
         if GRAPH_AVAILABLE:
             self._initialize_client()
@@ -52,7 +53,7 @@ class MicrosoftGraphClient:
                 return
                 
             # Create credential con timeout optimizado
-            credential = ClientSecretCredential(
+            self._credential = ClientSecretCredential(
                 tenant_id=tenant_id,
                 client_id=client_id,
                 client_secret=client_secret
@@ -60,7 +61,7 @@ class MicrosoftGraphClient:
             
             # Create Graph client
             self.client = GraphServiceClient(
-                credentials=credential,
+                credentials=self._credential,
                 scopes=['https://graph.microsoft.com/.default']
             )
             
@@ -272,6 +273,35 @@ class MicrosoftGraphClient:
             "calendar_invite_sent": True,
             "confirmation_sent": True
         }
+    
+    async def close(self):
+        """Close the Microsoft Graph client and clean up resources"""
+        try:
+            if self.client:
+                # Close the underlying HTTP client if it has a close method
+                if hasattr(self.client, 'close'):
+                    await self.client.close()
+                elif hasattr(self.client, '_http_client') and hasattr(self.client._http_client, 'close'):
+                    await self.client._http_client.close()
+                
+            if self._credential:
+                # Close credential's HTTP client if available
+                if hasattr(self._credential, 'close'):
+                    await self._credential.close()
+                elif hasattr(self._credential, '_http_client') and hasattr(self._credential._http_client, 'close'):
+                    await self._credential._http_client.close()
+                    
+            logger.info("✅ Microsoft Graph client closed successfully")
+        except Exception as e:
+            logger.error(f"Error closing Microsoft Graph client: {e}")
+    
+    async def __aenter__(self):
+        """Async context manager entry"""
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit"""
+        await self.close()
 
 # Global instance
 graph_client = MicrosoftGraphClient()
