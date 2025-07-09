@@ -194,6 +194,10 @@ Mati: "¿Prefiere una reunión o que lo transfiera?"
         self.company_name = company_name
         self.contact_name = contact_name
         self.call_direction = call_direction
+        
+        # Initialize conversation tracking
+        self.conversation_log = []
+        self.turn_counter = 0
 
     def set_participant(self, participant: rtc.RemoteParticipant):
         self.participant = participant
@@ -248,7 +252,7 @@ Mati: "¿Prefiere una reunión o que lo transfiera?"
         logger.info(f"📧 Has email: {self.prospect_info.get('has_email', False)}")
         logger.info(f"🔗 Source: {self.prospect_info.get('source', 'manual')}")
         
-        # Initialize conversation tracking
+        # Reset conversation tracking for new session
         self.conversation_log = []
         self.turn_counter = 0
         
