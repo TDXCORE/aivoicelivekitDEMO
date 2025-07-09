@@ -191,15 +191,14 @@ class MicrosoftGraphClient:
             from msgraph.generated.models.online_meeting_provider_type import OnlineMeetingProviderType
             
             event = Event()
-            event.subject = f"TDX Discovery Call - {contact_name} ({company_name})"
+            event.subject = f"TDX Discovery Call - {contact_name}"
             event.body = ItemBody()
             event.body.content_type = BodyType.Html
             event.body.content = f"""
             <h3>Reunión de Descubrimiento TDX</h3>
             <p><strong>Contacto:</strong> {contact_name}</p>
             <p><strong>Empresa:</strong> {company_name}</p>
-            <p><strong>Tipo:</strong> {meeting_type}</p>
-            <p><strong>Agendado por:</strong> Enrique - TDX SDR Bot</p>
+            <p><strong>Agendado por:</strong> Mati de TDX</p>
             <br>
             <p>Esta reunión fue agendada automáticamente por nuestro asistente virtual.</p>
             """
