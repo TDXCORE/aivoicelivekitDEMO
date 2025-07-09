@@ -164,11 +164,12 @@ class TDXSDRBot(Agent):
 
 **KEYWORDS QUE ACTIVAN TRANSFERENCIA INMEDIATA:**
 - "ejecutivo", "vendedor", "asesor", "consultor", "especialista"
-- "hablar con alguien", "persona real", "humano", "representante"
+- "hablar con alguien", "persona real", "humano", "representante", "agente"
 - "gerente", "director", "supervisor", "jefe"
 - "experto", "técnico", "ingeniero"
-- "quiero hablar con", "me conecta con", "transfiere"
+- "quiero hablar con", "me conecta con", "transfiere", "transferir"
 - "no quiero bot", "quiero persona", "alguien más"
+- "comunicar con", "conectar con", "pasar con"
 
 **ACCIÓN INMEDIATA:**
 Si el cliente dice CUALQUIERA de estas palabras, DEBES:
