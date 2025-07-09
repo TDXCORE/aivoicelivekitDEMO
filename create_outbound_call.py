@@ -22,6 +22,8 @@ async def create_outbound_call():
         api_secret=os.getenv("LIVEKIT_API_SECRET")
     )
     
+    try:
+    
     # Datos de la llamada
     phone_number = "+573108777663"
     
@@ -73,6 +75,12 @@ async def create_outbound_call():
         import traceback
         traceback.print_exc()
         return None
+    finally:
+        # Close LiveKit API client to prevent unclosed session warnings
+        if hasattr(lk_api, 'close'):
+            await lk_api.close()
+        elif hasattr(lk_api, '_session') and hasattr(lk_api._session, 'close'):
+            await lk_api._session.close()
 
 async def create_outbound_call_from_webhook(contact_data):
     """Crear llamada outbound desde webhook de Chatwoot"""
@@ -82,6 +90,8 @@ async def create_outbound_call_from_webhook(contact_data):
         api_key=os.getenv("LIVEKIT_API_KEY"),
         api_secret=os.getenv("LIVEKIT_API_SECRET")
     )
+    
+    try:
     
     # Extraer datos del contacto
     phone_number = contact_data.get("phone")
@@ -159,6 +169,12 @@ async def create_outbound_call_from_webhook(contact_data):
         import traceback
         traceback.print_exc()
         return None
+    finally:
+        # Close LiveKit API client to prevent unclosed session warnings
+        if hasattr(lk_api, 'close'):
+            await lk_api.close()
+        elif hasattr(lk_api, '_session') and hasattr(lk_api._session, 'close'):
+            await lk_api._session.close()
 
 if __name__ == "__main__":
     result = asyncio.run(create_outbound_call())

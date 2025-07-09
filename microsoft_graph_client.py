@@ -3,9 +3,9 @@ Microsoft Graph API client for calendar integration
 """
 import os
 import logging
+import asyncio
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
-import asyncio
 
 try:
     from msgraph import GraphServiceClient
@@ -279,17 +279,33 @@ class MicrosoftGraphClient:
         try:
             if self.client:
                 # Close the underlying HTTP client if it has a close method
-                if hasattr(self.client, 'close'):
-                    await self.client.close()
+                if hasattr(self.client, 'close') and callable(getattr(self.client, 'close', None)):
+                    close_method = getattr(self.client, 'close')
+                    if asyncio.iscoroutinefunction(close_method):
+                        await close_method()
+                    else:
+                        close_method()
                 elif hasattr(self.client, '_http_client') and hasattr(self.client._http_client, 'close'):
-                    await self.client._http_client.close()
+                    close_method = getattr(self.client._http_client, 'close')
+                    if asyncio.iscoroutinefunction(close_method):
+                        await close_method()
+                    else:
+                        close_method()
                 
             if self._credential:
                 # Close credential's HTTP client if available
-                if hasattr(self._credential, 'close'):
-                    await self._credential.close()
+                if hasattr(self._credential, 'close') and callable(getattr(self._credential, 'close', None)):
+                    close_method = getattr(self._credential, 'close')
+                    if asyncio.iscoroutinefunction(close_method):
+                        await close_method()
+                    else:
+                        close_method()
                 elif hasattr(self._credential, '_http_client') and hasattr(self._credential._http_client, 'close'):
-                    await self._credential._http_client.close()
+                    close_method = getattr(self._credential._http_client, 'close')
+                    if asyncio.iscoroutinefunction(close_method):
+                        await close_method()
+                    else:
+                        close_method()
                     
             logger.info("✅ Microsoft Graph client closed successfully")
         except Exception as e:

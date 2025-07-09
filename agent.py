@@ -324,67 +324,6 @@ Mati: "¿Prefiere una reunión o que lo transfiera?"
             except Exception as fallback_error:
                 logger.error(f"❌ Fallback greeting also failed: {fallback_error}")
 
-    async def on_speech_received(self, ctx: RunContext, speech_data):
-        """Handle incoming speech transcription for logging"""
-        try:
-            transcript = speech_data.get('transcript', '') if hasattr(speech_data, 'get') else str(speech_data)
-            self.turn_counter += 1
-            
-            # Log STT transcription
-            logger.info(f"🎤 STT [Turn {self.turn_counter}]: {transcript}")
-            
-            # Add to conversation log
-            self.conversation_log.append({
-                'turn': self.turn_counter,
-                'type': 'user_speech',
-                'content': transcript,
-                'timestamp': datetime.now().isoformat()
-            })
-            
-        except Exception as e:
-            logger.error(f"Error logging speech: {e}")
-    
-    async def on_response_generated(self, ctx: RunContext, response):
-        """Handle LLM response generation for logging"""
-        try:
-            response_text = response.get('text', '') if hasattr(response, 'get') else str(response)
-            
-            # Log LLM response
-            logger.info(f"🤖 LLM [Turn {self.turn_counter}]: {response_text}")
-            
-            # Add to conversation log
-            self.conversation_log.append({
-                'turn': self.turn_counter,
-                'type': 'bot_response',
-                'content': response_text,
-                'timestamp': datetime.now().isoformat()
-            })
-            
-        except Exception as e:
-            logger.error(f"Error logging response: {e}")
-    
-    async def on_session_end(self, ctx: RunContext):
-        """Handle session ending with full conversation log"""
-        try:
-            logger.info("🏁 Session ended - Full conversation log:")
-            for entry in self.conversation_log:
-                logger.info(f"  📝 {entry['type']} [Turn {entry['turn']}] ({entry['timestamp']}): {entry['content']}")
-            
-            # Export conversation log (could be sent to external service)
-            conversation_summary = {
-                'call_direction': self.call_direction,
-                'contact_name': self.contact_name,
-                'company_name': self.company_name,
-                'prospect_info': self.prospect_info,
-                'total_turns': self.turn_counter,
-                'conversation': self.conversation_log,
-                'session_end_time': datetime.now().isoformat()
-            }
-            
-            logger.info(f"📊 Conversation Summary: {json.dumps(conversation_summary, indent=2)}")
-            
-        except Exception as e:
-            logger.error(f"Error in session end logging: {e}")
 
     async def hangup(self):
         """Helper function to hang up the call by deleting the room"""
@@ -721,6 +660,63 @@ async def entrypoint(ctx: JobContext):
             # REMOVED: max_response_output_tokens (not supported by LiveKit RealtimeModel)
         )
     )
+
+    # Register event handlers for comprehensive logging
+    @session.on("user_speech_committed")
+    def on_user_speech_committed(event):
+        try:
+            agent.turn_counter += 1
+            transcript = event.user_transcript
+            logger.info(f"🎤 STT [Turn {agent.turn_counter}]: {transcript}")
+            
+            # Add to conversation log
+            agent.conversation_log.append({
+                'turn': agent.turn_counter,
+                'type': 'user_speech',
+                'content': transcript,
+                'timestamp': datetime.now().isoformat()
+            })
+        except Exception as e:
+            logger.error(f"Error logging speech: {e}")
+
+    @session.on("agent_speech_committed")
+    def on_agent_speech_committed(event):
+        try:
+            response_text = event.agent_transcript
+            logger.info(f"🤖 LLM [Turn {agent.turn_counter}]: {response_text}")
+            
+            # Add to conversation log
+            agent.conversation_log.append({
+                'turn': agent.turn_counter,
+                'type': 'bot_response',
+                'content': response_text,
+                'timestamp': datetime.now().isoformat()
+            })
+        except Exception as e:
+            logger.error(f"Error logging response: {e}")
+
+    @session.on("session_finished")
+    def on_session_finished():
+        try:
+            logger.info("🏁 Session ended - Full conversation log:")
+            for entry in agent.conversation_log:
+                logger.info(f"  📝 {entry['type']} [Turn {entry['turn']}] ({entry['timestamp']}): {entry['content']}")
+            
+            # Export conversation log (could be sent to external service)
+            conversation_summary = {
+                'call_direction': agent.call_direction,
+                'contact_name': agent.contact_name,
+                'company_name': agent.company_name,
+                'prospect_info': agent.prospect_info,
+                'total_turns': agent.turn_counter,
+                'conversation': agent.conversation_log,
+                'session_end_time': datetime.now().isoformat()
+            }
+            
+            logger.info(f"📊 Conversation Summary: {json.dumps(conversation_summary, indent=2)}")
+            
+        except Exception as e:
+            logger.error(f"Error in session end logging: {e}")
 
     # Check if this is an outbound call (phone number in metadata)
     outbound_phone = dial_info.get("phone_number") if call_direction == "outbound" else None
