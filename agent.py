@@ -761,7 +761,14 @@ async def entrypoint(ctx: JobContext):
             if agent.phone_number:
                 try:
                     logger.info(f"📤 Sending call summary to Chatwoot for phone: {agent.phone_number}")
-                    send_bot_summary_to_chatwoot(agent.phone_number, conversation_summary)
+                    
+                    # Convertir conversation_summary a string JSON formateado si es un dict
+                    if isinstance(conversation_summary, dict):
+                        formatted_summary = json.dumps(conversation_summary, indent=2, ensure_ascii=False)
+                    else:
+                        formatted_summary = str(conversation_summary)
+                    
+                    send_bot_summary_to_chatwoot(agent.phone_number, formatted_summary)
                     logger.info("✅ Call summary sent to Chatwoot successfully")
                 except Exception as chatwoot_error:
                     logger.error(f"❌ Error sending summary to Chatwoot: {chatwoot_error}")

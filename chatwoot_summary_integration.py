@@ -218,7 +218,7 @@ def send_bot_summary_to_chatwoot(phone_number: str, conversation_summary: str,
         conversation_summary=conversation_summary,
         call_duration=call_duration,
         call_outcome=call_outcome,
-        method='custom_attributes'  # Método recomendado
+        method='conversation'  # Cambiado a conversation para mayor visibilidad
     )
 
 
