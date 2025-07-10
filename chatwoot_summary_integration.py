@@ -108,7 +108,7 @@ class ChatwootSummaryIntegration:
             # 1. Crear conversación
             conversation_payload = {
                 'source_id': f"bot-summary-{datetime.now().timestamp()}",
-                'inbox_id': int(self.inbox_id),
+                'inbox_id': self.inbox_id,  # Usar como string, no convertir a int
                 'contact_id': contact_id,
                 'status': 'resolved'
             }
