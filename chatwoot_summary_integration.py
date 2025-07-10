@@ -9,6 +9,7 @@ import requests
 from datetime import datetime
 from typing import Dict, Any, Optional
 import logging
+import time
 
 # Configuración de logging
 logging.basicConfig(level=logging.INFO)
@@ -59,6 +60,64 @@ class ChatwootSummaryIntegration:
             logger.error(f"Error en find_contact_by_phone: {str(e)}")
             return None
     
+    def get_contact_inbox_source_id(self, contact_id: int) -> Optional[str]:
+        """
+        Obtiene el source_id del contact_inbox para crear conversaciones
+        """
+        try:
+            url = f"{self.base_url}/accounts/{self.account_id}/contacts/{contact_id}/contactable_inboxes"
+            response = requests.get(url, headers=self.headers)
+            
+            if response.status_code == 200:
+                inboxes = response.json().get('payload', [])
+                
+                # Buscar el inbox que coincida con nuestro inbox_id
+                for inbox in inboxes:
+                    if str(inbox.get('inbox_id')) == str(self.inbox_id):
+                        source_id = inbox.get('source_id')
+                        if source_id:
+                            logger.info(f"✅ Source ID encontrado: {source_id} para contacto {contact_id}")
+                            return source_id
+                
+                # Si no encuentra el inbox específico, usar el primero disponible
+                if inboxes:
+                    source_id = inboxes[0].get('source_id')
+                    logger.warning(f"⚠️ Usando primer source_id disponible: {source_id}")
+                    return source_id
+                    
+                logger.error(f"No se encontraron inboxes para contacto {contact_id}")
+                return None
+                
+            else:
+                logger.error(f"Error obteniendo contactable inboxes: {response.status_code} - {response.text}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error en get_contact_inbox_source_id: {str(e)}")
+            return None
+    
+    def ensure_contact_inbox_association(self, contact_id: int) -> bool:
+        """
+        Verifica y crea la asociación entre contacto e inbox si no existe
+        """
+        try:
+            # Primero verificar si ya existe la asociación
+            source_id = self.get_contact_inbox_source_id(contact_id)
+            if source_id:
+                return True
+            
+            # Si no existe, intentar crear la asociación
+            # Nota: Esto puede requerir permisos específicos según la configuración de Chatwoot
+            logger.warning(f"Contacto {contact_id} no está asociado al inbox {self.inbox_id}")
+            
+            # Para API channels, la asociación se puede crear automáticamente
+            # al crear la primera conversación
+            return False
+            
+        except Exception as e:
+            logger.error(f"Error en ensure_contact_inbox_association: {str(e)}")
+            return False
+    
     def update_contact_with_summary(self, contact_id: int, conversation_summary: str, 
                                    call_duration: Optional[str] = None,
                                    call_outcome: Optional[str] = None) -> bool:
@@ -102,18 +161,28 @@ class ChatwootSummaryIntegration:
     
     def create_conversation_with_summary(self, contact_id: int, conversation_summary: str) -> bool:
         """
-        Crea una nueva conversación con el resumen como mensaje (método alternativo)
+        Crea una nueva conversación con el resumen como mensaje usando source_id válido
         """
         try:
-            # 1. Crear conversación
+            # 1. Obtener source_id válido
+            source_id = self.get_contact_inbox_source_id(contact_id)
+            
+            if not source_id:
+                # Intentar crear asociación o usar phone como source_id para API channels
+                logger.warning(f"No se pudo obtener source_id para contacto {contact_id}, usando timestamp")
+                source_id = f"bot-summary-{int(datetime.now().timestamp())}"
+            
+            # 2. Crear conversación con source_id válido
             conversation_payload = {
-                'source_id': f"bot-summary-{datetime.now().timestamp()}",
-                'inbox_id': self.inbox_id,  # Usar como string, no convertir a int
+                'source_id': source_id,
+                'inbox_id': int(self.inbox_id) if self.inbox_id.isdigit() else self.inbox_id,
                 'contact_id': contact_id,
                 'status': 'resolved'
             }
             
             conv_url = f"{self.base_url}/accounts/{self.account_id}/conversations"
+            logger.info(f"Creando conversación con payload: {conversation_payload}")
+            
             conv_response = requests.post(conv_url, headers=self.headers, json=conversation_payload)
             
             if conv_response.status_code != 200:
@@ -122,8 +191,9 @@ class ChatwootSummaryIntegration:
             
             conversation = conv_response.json()
             conversation_id = conversation.get('id')
+            logger.info(f"Conversación creada exitosamente: ID {conversation_id}")
             
-            # 2. Enviar mensaje con resumen
+            # 3. Enviar mensaje con resumen
             message_content = f"""📋 **Resumen de Conversación Bot TDX**
 
 📅 **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}
@@ -155,10 +225,72 @@ class ChatwootSummaryIntegration:
             logger.error(f"Error en create_conversation_with_summary: {str(e)}")
             return False
     
+    def create_conversation_with_retry(self, contact_id: int, conversation_summary: str, max_retries: int = 3) -> bool:
+        """
+        Crea conversación con reintentos y diferentes estrategias
+        """
+        for attempt in range(max_retries):
+            try:
+                logger.info(f"Intento {attempt + 1}/{max_retries} de crear conversación")
+                
+                if self.create_conversation_with_summary(contact_id, conversation_summary):
+                    return True
+                
+                # Esperar antes del siguiente intento
+                if attempt < max_retries - 1:
+                    wait_time = (attempt + 1) * 2  # Backoff exponencial
+                    logger.info(f"Esperando {wait_time}s antes del siguiente intento...")
+                    time.sleep(wait_time)
+                    
+            except Exception as e:
+                logger.error(f"Error en intento {attempt + 1}: {str(e)}")
+                if attempt < max_retries - 1:
+                    time.sleep((attempt + 1) * 2)
+        
+        return False
+    
+    def send_conversation_summary_hybrid(self, phone_number: str, conversation_summary: str,
+                                        call_duration: Optional[str] = None,
+                                        call_outcome: Optional[str] = None) -> bool:
+        """
+        Método híbrido que intenta crear conversación y usa custom_attributes como respaldo
+        """
+        try:
+            # 1. Buscar contacto
+            contact = self.find_contact_by_phone(phone_number)
+            
+            if not contact:
+                logger.error(f"No se encontró contacto con teléfono: {phone_number}")
+                return False
+            
+            contact_id = contact['id']
+            logger.info(f"Contacto encontrado: {contact['name']} (ID: {contact_id})")
+            
+            # 2. Intentar crear conversación primero (más visible)
+            logger.info(f"Intentando crear conversación para resumen...")
+            
+            if self.create_conversation_with_retry(contact_id, conversation_summary):
+                logger.info(f"✅ Resumen enviado exitosamente vía conversación")
+                return True
+            
+            # 3. Si falla, usar custom_attributes como respaldo
+            logger.warning(f"Conversación falló, intentando custom_attributes como respaldo...")
+            
+            if self.update_contact_with_summary(contact_id, conversation_summary, call_duration, call_outcome):
+                logger.info(f"✅ Resumen enviado exitosamente vía custom_attributes")
+                return True
+            
+            logger.error(f"❌ Todos los métodos fallaron para enviar resumen")
+            return False
+                
+        except Exception as e:
+            logger.error(f"Error en send_conversation_summary_hybrid: {str(e)}")
+            return False
+    
     def send_conversation_summary(self, phone_number: str, conversation_summary: str,
                                  call_duration: Optional[str] = None,
                                  call_outcome: Optional[str] = None,
-                                 method: str = 'custom_attributes') -> bool:
+                                 method: str = 'hybrid') -> bool:
         """
         Función principal para enviar resumen de conversación
         
@@ -167,7 +299,7 @@ class ChatwootSummaryIntegration:
             conversation_summary: Resumen de la conversación
             call_duration: Duración de la llamada (opcional)
             call_outcome: Resultado de la llamada (opcional)
-            method: 'custom_attributes' o 'conversation' (método a usar)
+            method: 'custom_attributes', 'conversation' o 'hybrid' (método a usar)
         """
         try:
             # 1. Buscar contacto
@@ -181,12 +313,16 @@ class ChatwootSummaryIntegration:
             logger.info(f"Contacto encontrado: {contact['name']} (ID: {contact_id})")
             
             # 2. Enviar resumen según método elegido
-            if method == 'custom_attributes':
+            if method == 'hybrid':
+                return self.send_conversation_summary_hybrid(
+                    phone_number, conversation_summary, call_duration, call_outcome
+                )
+            elif method == 'custom_attributes':
                 return self.update_contact_with_summary(
                     contact_id, conversation_summary, call_duration, call_outcome
                 )
             elif method == 'conversation':
-                return self.create_conversation_with_summary(contact_id, conversation_summary)
+                return self.create_conversation_with_retry(contact_id, conversation_summary)
             else:
                 logger.error(f"Método no válido: {method}")
                 return False
@@ -218,7 +354,7 @@ def send_bot_summary_to_chatwoot(phone_number: str, conversation_summary: str,
         conversation_summary=conversation_summary,
         call_duration=call_duration,
         call_outcome=call_outcome,
-        method='conversation'  # Cambiado a conversation para mayor visibilidad
+        method='hybrid'  # Cambiado a hybrid para mejor robustez
     )
 
 
