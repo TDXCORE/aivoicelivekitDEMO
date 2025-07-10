@@ -19,7 +19,7 @@ class ChatwootSummaryIntegration:
     def __init__(self):
         self.account_id = os.getenv('VITE_CHATWOOT_ACCOUNT_ID', '126521')
         self.api_token = os.getenv('VITE_CHATWOOT_API_TOKEN', 'PNwLGXoDiJ22QKd4AzX9Xxof')
-        self.inbox_id = os.getenv('VITE_CHATWOOT_INBOX_ID', 'VeyqnrFYMM2kbX7GXHKCzDVM')
+        self.inbox_id = os.getenv('VITE_CHATWOOT_INBOX_ID', '69704')  # ID numérico, no identifier
         self.base_url = "https://app.chatwoot.com/api/v1"
         
         self.headers = {
@@ -175,7 +175,7 @@ class ChatwootSummaryIntegration:
             # 2. Crear conversación con source_id válido
             conversation_payload = {
                 'source_id': source_id,
-                'inbox_id': int(self.inbox_id) if self.inbox_id.isdigit() else self.inbox_id,
+                'inbox_id': int(self.inbox_id),
                 'contact_id': contact_id,
                 'status': 'resolved'
             }
