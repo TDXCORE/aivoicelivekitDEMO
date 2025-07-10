@@ -249,6 +249,103 @@ class ChatwootSummaryIntegration:
         
         return False
     
+    def format_conversation_summary(self, conversation_summary: str) -> str:
+        """
+        Convierte el JSON de conversación en un formato legible tipo guión
+        """
+        try:
+            # Si es string JSON, parsearlo
+            if isinstance(conversation_summary, str):
+                if conversation_summary.strip().startswith('{'):
+                    try:
+                        summary_data = json.loads(conversation_summary)
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Error parsing JSON: {e}")
+                        return conversation_summary
+                else:
+                    # Si no es JSON, devolver como está
+                    return conversation_summary
+            else:
+                summary_data = conversation_summary
+            
+            # Extraer información básica
+            contact_name = summary_data.get('contact_name', 'Cliente')
+            company_name = summary_data.get('company_name', 'N/A')
+            call_direction = summary_data.get('call_direction', 'unknown')
+            conversation_log = summary_data.get('conversation_log', [])
+            
+            # Crear el formato legible
+            formatted_summary = f"""👤 **Cliente:** {contact_name}
+🏢 **Empresa:** {company_name}
+📞 **Tipo de llamada:** {call_direction.title()}
+
+📋 **CONVERSACIÓN:**
+"""
+            
+            # Procesar cada intercambio de la conversación
+            for entry in conversation_log:
+                entry_type = entry.get('type', '')
+                content = entry.get('content', '').strip()
+                timestamp = entry.get('timestamp', '')
+                
+                # Extraer solo la hora del timestamp
+                if timestamp:
+                    try:
+                        dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                        time_str = dt.strftime('%H:%M:%S')
+                    except:
+                        time_str = timestamp.split('T')[1][:8] if 'T' in timestamp else ''
+                else:
+                    time_str = ''
+                
+                # Solo mostrar mensajes con contenido
+                if content and entry_type in ['user_message', 'assistant_message']:
+                    if entry_type == 'user_message':
+                        formatted_summary += f"\n👤 **{contact_name}** ({time_str}): {content}"
+                    elif entry_type == 'assistant_message':
+                        # Limpiar markdown del contenido del asistente
+                        clean_content = content.replace('**', '').replace('*', '')
+                        formatted_summary += f"\n🤖 **Mati** ({time_str}): {clean_content}"
+            
+            # Agregar resumen final
+            formatted_summary += "\n\n📊 **RESUMEN:**"
+            
+            # Analizar la conversación para extraer puntos clave
+            user_messages = [entry['content'] for entry in conversation_log 
+                           if entry.get('type') == 'user_message' and entry.get('content', '').strip()]
+            
+            if user_messages:
+                # Determinar el tema principal
+                all_user_text = ' '.join(user_messages).lower()
+                if 'soporte' in all_user_text or 'nivel' in all_user_text:
+                    tema = "Automatización de soporte técnico"
+                elif 'ventas' in all_user_text or 'venta' in all_user_text:
+                    tema = "Automatización de procesos de ventas"
+                elif 'bot' in all_user_text or 'inteligencia' in all_user_text:
+                    tema = "Soluciones de inteligencia artificial"
+                else:
+                    tema = "Consulta sobre servicios de IA"
+                
+                formatted_summary += f"\n• **Tema principal:** {tema}"
+            
+            # Verificar si se agendó algo
+            all_text = ' '.join([entry.get('content', '') for entry in conversation_log]).lower()
+            if 'agendar' in all_text or 'reunión' in all_text or 'cita' in all_text:
+                formatted_summary += "\n• **Acción tomada:** Reunión agendada"
+                if 'jueves' in all_text or 'viernes' in all_text:
+                    formatted_summary += "\n• **Próximo paso:** Reunión estratégica programada"
+            elif 'transferir' in all_text or 'ejecutivo' in all_text:
+                formatted_summary += "\n• **Acción tomada:** Transferencia a ejecutivo de ventas"
+            
+            formatted_summary += "\n\n---\n*Resumen generado automáticamente por Mati (Bot de Voz TDX)*"
+            
+            return formatted_summary
+            
+        except Exception as e:
+            logger.error(f"Error formateando resumen: {str(e)}")
+            # Si hay error, devolver el resumen original
+            return conversation_summary
+    
     def send_conversation_summary_hybrid(self, phone_number: str, conversation_summary: str,
                                         call_duration: Optional[str] = None,
                                         call_outcome: Optional[str] = None) -> bool:
