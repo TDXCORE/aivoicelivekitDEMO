@@ -11,6 +11,7 @@ import re
 import uuid
 from datetime import datetime, timedelta
 from microsoft_graph_client import graph_client
+from chatwoot_summary_integration import send_bot_summary_to_chatwoot
 
 from livekit import rtc, api
 from livekit.agents import (
@@ -195,6 +196,7 @@ Mati: "¿Prefiere una reunión o que lo transfiera?"
         self.company_name = company_name
         self.contact_name = contact_name
         self.call_direction = call_direction
+        self.phone_number = dial_info.get("phone_number")
         
         # Initialize conversation tracking
         self.conversation_log = []
@@ -754,6 +756,17 @@ async def entrypoint(ctx: JobContext):
             }
             
             logger.info(f"📊 Session Summary: {json.dumps(conversation_summary, indent=2)}")
+            
+            # Send summary to Chatwoot
+            if agent.phone_number:
+                try:
+                    logger.info(f"📤 Sending call summary to Chatwoot for phone: {agent.phone_number}")
+                    send_bot_summary_to_chatwoot(agent.phone_number, conversation_summary)
+                    logger.info("✅ Call summary sent to Chatwoot successfully")
+                except Exception as chatwoot_error:
+                    logger.error(f"❌ Error sending summary to Chatwoot: {chatwoot_error}")
+            else:
+                logger.warning("⚠️ No phone number available - cannot send summary to Chatwoot")
             
         except Exception as e:
             logger.error(f"Error logging session close: {e}")
