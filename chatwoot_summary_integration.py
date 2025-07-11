@@ -193,17 +193,9 @@ class ChatwootSummaryIntegration:
             conversation_id = conversation.get('id')
             logger.info(f"Conversación creada exitosamente: ID {conversation_id}")
             
-            # 3. Enviar mensaje con resumen
-            message_content = f"""📋 **Resumen de Conversación Bot TDX**
-
-📅 **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}
-🤖 **Agente:** Mati (Bot de Voz)
-
-**Resumen de la Conversación:**
-{conversation_summary}
-
----
-*Generado automáticamente por el sistema de bot de voz TDX*"""
+            # 3. Enviar mensaje con resumen formateado
+            formatted_summary = self.format_conversation_summary(conversation_summary)
+            message_content = formatted_summary
 
             message_payload = {
                 'content': message_content,
@@ -249,9 +241,154 @@ class ChatwootSummaryIntegration:
         
         return False
     
+    def extract_customer_profile(self, summary_data: Dict[str, Any]) -> Dict[str, str]:
+        """
+        Extrae el perfil del cliente de la conversación
+        """
+        try:
+            conversation_log = summary_data.get('conversation_log', [])
+            prospect_info = summary_data.get('prospect_info', {})
+            
+            # Obtener información básica del prospecto
+            profile = {
+                'industry': 'No especificada',
+                'main_need': 'Consulta general',
+                'urgency': 'Media',
+                'budget': 'No mencionado',
+                'company_size': 'No especificada'
+            }
+            
+            # Analizar mensajes del usuario
+            user_messages = [entry['content'].lower() for entry in conversation_log 
+                           if entry.get('type') == 'user_message' and entry.get('content', '').strip()]
+            
+            all_user_text = ' '.join(user_messages)
+            
+            # Detectar industria
+            if 'carro' in all_user_text or 'auto' in all_user_text or 'vehículo' in all_user_text:
+                profile['industry'] = 'Automotriz'
+            elif 'restaurante' in all_user_text or 'comida' in all_user_text:
+                profile['industry'] = 'Restaurantes/Gastronomía'
+            elif 'tienda' in all_user_text or 'retail' in all_user_text or 'venta' in all_user_text:
+                profile['industry'] = 'Retail/Comercio'
+            elif 'tecnología' in all_user_text or 'software' in all_user_text:
+                profile['industry'] = 'Tecnología'
+            elif 'salud' in all_user_text or 'médico' in all_user_text or 'clínica' in all_user_text:
+                profile['industry'] = 'Salud'
+            elif 'educación' in all_user_text or 'colegio' in all_user_text or 'universidad' in all_user_text:
+                profile['industry'] = 'Educación'
+            
+            # Detectar necesidad principal
+            if 'soporte' in all_user_text and 'nivel' in all_user_text:
+                profile['main_need'] = 'Automatización de soporte técnico nivel 1'
+            elif 'ventas' in all_user_text or 'vender' in all_user_text:
+                profile['main_need'] = 'Automatización de procesos de ventas'
+            elif 'atención' in all_user_text and 'cliente' in all_user_text:
+                profile['main_need'] = 'Mejora en atención al cliente'
+            elif 'bot' in all_user_text or 'chatbot' in all_user_text:
+                profile['main_need'] = 'Implementación de chatbot'
+            elif 'ia' in all_user_text or 'inteligencia artificial' in all_user_text:
+                profile['main_need'] = 'Soluciones de inteligencia artificial'
+            
+            # Detectar urgencia
+            if any(word in all_user_text for word in ['urgente', 'rápido', 'pronto', 'ya', 'inmediato']):
+                profile['urgency'] = 'Alta'
+            elif any(word in all_user_text for word in ['evaluar', 'analizar', 'futuro', 'próximo año']):
+                profile['urgency'] = 'Baja'
+            
+            # Detectar presupuesto mencionado
+            import re
+            budget_pattern = r'(\$[\d,]+|[\d,]+\s*(?:pesos|dólares|usd|mil|millón))'
+            budget_match = re.search(budget_pattern, all_user_text, re.IGNORECASE)
+            if budget_match:
+                profile['budget'] = budget_match.group(1)
+            
+            return profile
+            
+        except Exception as e:
+            logger.error(f"Error extrayendo perfil: {str(e)}")
+            return {
+                'industry': 'No especificada',
+                'main_need': 'Consulta general', 
+                'urgency': 'Media',
+                'budget': 'No mencionado',
+                'company_size': 'No especificada'
+            }
+    
+    def analyze_conversation_outcomes(self, summary_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Analiza los resultados y próximos pasos de la conversación
+        """
+        try:
+            conversation_log = summary_data.get('conversation_log', [])
+            all_content = ' '.join([entry.get('content', '') for entry in conversation_log]).lower()
+            
+            outcomes = {
+                'outcome_type': 'Consulta completada',
+                'meeting_scheduled': False,
+                'transferred': False,
+                'email_collected': False,
+                'follow_up_required': False,
+                'objections': [],
+                'next_steps': [],
+                'interest_level': 'Medio'
+            }
+            
+            # Detectar si se agendó reunión
+            if any(word in all_content for word in ['agendar', 'reunión', 'cita', 'meeting', 'programar']):
+                outcomes['meeting_scheduled'] = True
+                outcomes['outcome_type'] = 'Reunión agendada'
+                
+                # Buscar fechas específicas
+                if any(day in all_content for day in ['lunes', 'martes', 'miércoles', 'jueves', 'viernes']):
+                    outcomes['next_steps'].append('Reunión estratégica programada')
+            
+            # Detectar transferencia
+            if any(word in all_content for word in ['transferir', 'ejecutivo', 'especialista', 'humano']):
+                outcomes['transferred'] = True
+                outcomes['outcome_type'] = 'Transferido a ejecutivo'
+            
+            # Detectar nivel de interés
+            positive_words = ['interesado', 'me gusta', 'perfecto', 'excelente', 'sí']
+            negative_words = ['no', 'no me interesa', 'muy caro', 'no tengo tiempo']
+            
+            positive_count = sum(1 for word in positive_words if word in all_content)
+            negative_count = sum(1 for word in negative_words if word in all_content)
+            
+            if positive_count > negative_count + 1:
+                outcomes['interest_level'] = 'Alto'
+            elif negative_count > positive_count:
+                outcomes['interest_level'] = 'Bajo'
+            
+            # Detectar objeciones
+            if 'caro' in all_content or 'precio' in all_content:
+                outcomes['objections'].append('Preocupación por precio')
+            if 'tiempo' in all_content and 'no tengo' in all_content:
+                outcomes['objections'].append('Falta de tiempo')
+            if 'complejo' in all_content or 'complicado' in all_content:
+                outcomes['objections'].append('Percepción de complejidad')
+            
+            # Determinar seguimiento requerido
+            if not outcomes['meeting_scheduled'] and not outcomes['transferred']:
+                outcomes['follow_up_required'] = True
+                outcomes['next_steps'].append('Seguimiento requerido por equipo de ventas')
+            
+            return outcomes
+            
+        except Exception as e:
+            logger.error(f"Error analizando outcomes: {str(e)}")
+            return {
+                'outcome_type': 'Consulta completada',
+                'meeting_scheduled': False,
+                'transferred': False,
+                'interest_level': 'Medio',
+                'next_steps': [],
+                'objections': []
+            }
+    
     def format_conversation_summary(self, conversation_summary: str) -> str:
         """
-        Convierte el JSON de conversación en un formato legible tipo guión
+        Convierte el JSON de conversación en un formato ejecutivo profesional
         """
         try:
             # Si es string JSON, parsearlo
@@ -273,14 +410,48 @@ class ChatwootSummaryIntegration:
             company_name = summary_data.get('company_name', 'N/A')
             call_direction = summary_data.get('call_direction', 'unknown')
             conversation_log = summary_data.get('conversation_log', [])
+            prospect_info = summary_data.get('prospect_info', {})
+            session_end_time = summary_data.get('session_end_time', '')
+            total_turns = summary_data.get('total_turns', 0)
             
-            # Crear el formato legible
-            formatted_summary = f"""👤 **Cliente:** {contact_name}
-🏢 **Empresa:** {company_name}
-📞 **Tipo de llamada:** {call_direction.title()}
+            # Extraer perfil del cliente y análisis
+            customer_profile = self.extract_customer_profile(summary_data)
+            outcomes = self.analyze_conversation_outcomes(summary_data)
+            
+            # Calcular duración estimada
+            duration = "N/A"
+            if conversation_log and len(conversation_log) > 0:
+                try:
+                    first_timestamp = conversation_log[0].get('timestamp', '')
+                    last_timestamp = conversation_log[-1].get('timestamp', '') or session_end_time
+                    
+                    if first_timestamp and last_timestamp:
+                        start_time = datetime.fromisoformat(first_timestamp.replace('Z', '+00:00'))
+                        end_time = datetime.fromisoformat(last_timestamp.replace('Z', '+00:00'))
+                        duration_mins = int((end_time - start_time).total_seconds() / 60)
+                        duration = f"{duration_mins} minutos"
+                except:
+                    duration = "N/A"
+            
+            # Crear el formato ejecutivo profesional
+            formatted_summary = f"""🎯 **RESUMEN EJECUTIVO - BOT TDX**
 
-📋 **CONVERSACIÓN:**
-"""
+📊 **INFORMACIÓN DEL CONTACTO**
+• **Cliente:** {contact_name}
+• **Empresa:** {company_name}
+• **Email:** {prospect_info.get('email', 'No disponible')}
+• **Teléfono:** {prospect_info.get('phone', 'N/A')}
+• **Fuente:** {prospect_info.get('source', 'N/A').replace('_', ' ').title()}
+• **ID Chatwoot:** {prospect_info.get('chatwoot_id', 'N/A')}
+
+👤 **PERFIL DEL CLIENTE**
+• **Industria:** {customer_profile['industry']}
+• **Necesidad principal:** {customer_profile['main_need']}
+• **Urgencia:** {customer_profile['urgency']}
+• **Presupuesto:** {customer_profile['budget']}
+• **Nivel de interés:** {outcomes['interest_level']}
+
+💬 **CONVERSACIÓN COMPLETA**"""
             
             # Procesar cada intercambio de la conversación
             for entry in conversation_log:
@@ -301,43 +472,63 @@ class ChatwootSummaryIntegration:
                 # Solo mostrar mensajes con contenido
                 if content and entry_type in ['user_message', 'assistant_message']:
                     if entry_type == 'user_message':
-                        formatted_summary += f"\n👤 **{contact_name}** ({time_str}): {content}"
+                        formatted_summary += f"\n[{time_str}] 👤 **{contact_name}:** {content}"
                     elif entry_type == 'assistant_message':
                         # Limpiar markdown del contenido del asistente
                         clean_content = content.replace('**', '').replace('*', '')
-                        formatted_summary += f"\n🤖 **Mati** ({time_str}): {clean_content}"
+                        formatted_summary += f"\n[{time_str}] 🤖 **Mati:** {clean_content}"
             
-            # Agregar resumen final
-            formatted_summary += "\n\n📊 **RESUMEN:**"
+            # Agregar análisis de la llamada
+            formatted_summary += f"\n\n📈 **ANÁLISIS DE LA LLAMADA**"
+            formatted_summary += f"\n• **Duración:** {duration}"
+            formatted_summary += f"\n• **Total de intercambios:** {total_turns}"
+            formatted_summary += f"\n• **Nivel de interés:** {outcomes['interest_level']}"
             
-            # Analizar la conversación para extraer puntos clave
-            user_messages = [entry['content'] for entry in conversation_log 
-                           if entry.get('type') == 'user_message' and entry.get('content', '').strip()]
+            if outcomes['objections']:
+                objections_str = ', '.join(outcomes['objections'])
+                formatted_summary += f"\n• **Objeciones identificadas:** {objections_str}"
+            else:
+                formatted_summary += f"\n• **Objeciones identificadas:** Ninguna"
             
-            if user_messages:
-                # Determinar el tema principal
-                all_user_text = ' '.join(user_messages).lower()
-                if 'soporte' in all_user_text or 'nivel' in all_user_text:
-                    tema = "Automatización de soporte técnico"
-                elif 'ventas' in all_user_text or 'venta' in all_user_text:
-                    tema = "Automatización de procesos de ventas"
-                elif 'bot' in all_user_text or 'inteligencia' in all_user_text:
-                    tema = "Soluciones de inteligencia artificial"
-                else:
-                    tema = "Consulta sobre servicios de IA"
-                
-                formatted_summary += f"\n• **Tema principal:** {tema}"
+            # Temas discutidos
+            topics = [customer_profile['main_need']]
+            if customer_profile['industry'] != 'No especificada':
+                topics.append(f"Soluciones para {customer_profile['industry'].lower()}")
+            topics_str = ', '.join(topics)
+            formatted_summary += f"\n• **Temas discutidos:** {topics_str}"
             
-            # Verificar si se agendó algo
-            all_text = ' '.join([entry.get('content', '') for entry in conversation_log]).lower()
-            if 'agendar' in all_text or 'reunión' in all_text or 'cita' in all_text:
-                formatted_summary += "\n• **Acción tomada:** Reunión agendada"
-                if 'jueves' in all_text or 'viernes' in all_text:
-                    formatted_summary += "\n• **Próximo paso:** Reunión estratégica programada"
-            elif 'transferir' in all_text or 'ejecutivo' in all_text:
-                formatted_summary += "\n• **Acción tomada:** Transferencia a ejecutivo de ventas"
+            # Resultado y próximos pasos
+            formatted_summary += f"\n\n🎯 **RESULTADO Y PRÓXIMOS PASOS**"
+            formatted_summary += f"\n• **Outcome:** {outcomes['outcome_type']}"
             
-            formatted_summary += "\n\n---\n*Resumen generado automáticamente por Mati (Bot de Voz TDX)*"
+            if outcomes['meeting_scheduled']:
+                formatted_summary += f"\n• **Reunión agendada:** ✅ Sí"
+            else:
+                formatted_summary += f"\n• **Reunión agendada:** ❌ No"
+            
+            if outcomes['next_steps']:
+                for step in outcomes['next_steps']:
+                    formatted_summary += f"\n• **Acción requerida:** {step}"
+            else:
+                formatted_summary += f"\n• **Acción requerida:** Seguimiento estándar"
+            
+            # Notas especiales
+            special_notes = []
+            if outcomes['transferred']:
+                special_notes.append("Cliente transferido a ejecutivo humano")
+            if customer_profile['urgency'] == 'Alta':
+                special_notes.append("URGENTE: Cliente requiere atención prioritaria")
+            if outcomes['interest_level'] == 'Alto':
+                special_notes.append("Cliente con alto nivel de interés - oportunidad caliente")
+            
+            if special_notes:
+                notes_str = ' | '.join(special_notes)
+                formatted_summary += f"\n• **Notas especiales:** {notes_str}"
+            
+            # Footer
+            formatted_summary += f"\n\n---"
+            formatted_summary += f"\n📅 **Generado:** {datetime.now().strftime('%d/%m/%Y %H:%M')}"
+            formatted_summary += f"\n🤖 **Por:** Mati (Bot de Voz TDX)"
             
             return formatted_summary
             
