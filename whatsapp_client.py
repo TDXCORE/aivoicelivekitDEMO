@@ -9,8 +9,8 @@ logger = logging.getLogger("whatsapp-client")
 
 class ChatwootWhatsAppClient:
     def __init__(self):
-        self.account_id = os.getenv('CHATWOOT_ACCOUNT_ID')
-        self.api_token = os.getenv('CHATWOOT_API_TOKEN')
+        self.account_id = os.getenv('VITE_CHATWOOT_ACCOUNT_ID')
+        self.api_token = os.getenv('VITE_CHATWOOT_API_TOKEN')
         self.bot_agent_id = os.getenv('CHATWOOT_BOT_AGENT_ID')
         self.base_url = "https://app.chatwoot.com/api/v1"
         

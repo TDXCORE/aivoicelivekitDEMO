@@ -9,7 +9,7 @@ logger = logging.getLogger("whatsapp-security")
 
 class WhatsAppWebhookSecurity:
     def __init__(self):
-        self.webhook_token = os.getenv('CHATWOOT_BOT_WEBHOOK_TOKEN')
+        self.webhook_token = os.getenv('CHATWOOT_WEBHOOK_TOKEN')
         self.allowed_ips = os.getenv('CHATWOOT_ALLOWED_IPS', '').split(',')
         
         # Deduplicación de mensajes (Chatwoot reenvía hasta 3 veces)
@@ -23,7 +23,7 @@ class WhatsAppWebhookSecurity:
         
         # Validar configuración
         if not self.webhook_token:
-            logger.error("CHATWOOT_BOT_WEBHOOK_TOKEN not configured")
+            logger.error("CHATWOOT_WEBHOOK_TOKEN not configured")
             raise ValueError("WhatsApp webhook token not configured")
     
     def cleanup_old_messages(self):
@@ -193,9 +193,9 @@ class WhatsAppWebhookSecurity:
     def validate_environment(self) -> bool:
         """Validar que todas las variables de entorno están configuradas"""
         required_vars = [
-            'CHATWOOT_ACCOUNT_ID',
-            'CHATWOOT_API_TOKEN',
-            'CHATWOOT_BOT_WEBHOOK_TOKEN'
+            'VITE_CHATWOOT_ACCOUNT_ID',
+            'VITE_CHATWOOT_API_TOKEN',
+            'CHATWOOT_WEBHOOK_TOKEN'
         ]
         
         missing_vars = []

@@ -16,5 +16,3 @@ services:
         value: 1
       - key: WHATSAPP_BOT_ENABLED
         value: true
-      - key: CHATWOOT_BOT_WEBHOOK_TOKEN
-        value: secure-whatsapp-token-production-2025

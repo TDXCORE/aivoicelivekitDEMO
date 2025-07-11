@@ -37,9 +37,9 @@ async def lifespan(app):
     
     # Validar variables de entorno críticas
     required_vars = [
-        'CHATWOOT_ACCOUNT_ID',
-        'CHATWOOT_API_TOKEN', 
-        'CHATWOOT_BOT_WEBHOOK_TOKEN',
+        'VITE_CHATWOOT_ACCOUNT_ID',
+        'VITE_CHATWOOT_API_TOKEN', 
+        'CHATWOOT_WEBHOOK_TOKEN',
         'OPENAI_API_KEY'
     ]
     
