@@ -187,3 +187,114 @@ async def shutdown_event():
         logger.info("✅ Resources cleaned up successfully")
     except Exception as e:
         logger.error(f"Error during cleanup: {e}")
+
+# ============================================================================
+# WHATSAPP BOT ENDPOINTS - AGREGADOS SIN MODIFICAR CODIGO EXISTENTE
+# ============================================================================
+
+# Importar handlers de WhatsApp
+try:
+    from whatsapp_webhook import whatsapp_webhook_handler
+    from whatsapp_metrics import whatsapp_metrics
+    WHATSAPP_ENABLED = os.getenv('WHATSAPP_BOT_ENABLED', 'false').lower() == 'true'
+    logger.info(f"WhatsApp bot enabled: {WHATSAPP_ENABLED}")
+except ImportError as e:
+    logger.warning(f"WhatsApp modules not available: {e}")
+    WHATSAPP_ENABLED = False
+
+@app.route('/webhooks/whatsapp/<token>', methods=['POST'])
+async def whatsapp_webhook_endpoint(token: str, request: Request):
+    """Endpoint WhatsApp - completamente separado del voice system"""
+    
+    if not WHATSAPP_ENABLED:
+        raise HTTPException(status_code=503, detail="WhatsApp bot service not enabled")
+    
+    try:
+        # Procesar con handler completo
+        result = await whatsapp_webhook_handler.handle_webhook(request)
+        return result
+    except Exception as e:
+        logger.error(f"WhatsApp webhook error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get('/health/whatsapp')
+async def whatsapp_health_check():
+    """Health check específico para WhatsApp bot"""
+    
+    if not WHATSAPP_ENABLED:
+        return {
+            'status': 'disabled',
+            'service': 'whatsapp_bot',
+            'message': 'WhatsApp bot service is not enabled'
+        }
+    
+    try:
+        # Obtener stats del handler
+        handler_stats = await whatsapp_webhook_handler.get_handler_stats()
+        daily_summary = await whatsapp_metrics.get_daily_summary()
+        
+        return {
+            'status': 'healthy',
+            'service': 'whatsapp_bot',
+            'timestamp': datetime.now().isoformat(),
+            'handler_stats': handler_stats,
+            'daily_summary': daily_summary
+        }
+    except Exception as e:
+        logger.error(f"WhatsApp health check error: {e}")
+        return {
+            'status': 'error',
+            'service': 'whatsapp_bot',
+            'error': str(e)
+        }
+
+@app.get('/admin/whatsapp/metrics')
+async def get_whatsapp_metrics():
+    """Endpoint para obtener métricas de WhatsApp"""
+    
+    if not WHATSAPP_ENABLED:
+        raise HTTPException(status_code=503, detail="WhatsApp bot service not enabled")
+    
+    try:
+        return {
+            'daily_summary': await whatsapp_metrics.get_daily_summary(),
+            'conversation_analytics': await whatsapp_metrics.get_conversation_analytics(),
+            'performance_metrics': await whatsapp_metrics.get_performance_metrics()
+        }
+    except Exception as e:
+        logger.error(f"Error getting WhatsApp metrics: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post('/admin/whatsapp/cleanup')
+async def cleanup_whatsapp_bots():
+    """Endpoint para limpiar bots inactivos"""
+    
+    if not WHATSAPP_ENABLED:
+        raise HTTPException(status_code=503, detail="WhatsApp bot service not enabled")
+    
+    try:
+        cleaned_count = await whatsapp_webhook_handler.cleanup_inactive_bots()
+        await whatsapp_metrics.cleanup_old_metrics()
+        
+        return {
+            'status': 'success',
+            'cleaned_bots': cleaned_count,
+            'timestamp': datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error cleaning up WhatsApp bots: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get('/admin/whatsapp/conversations/{conversation_id}')
+async def get_whatsapp_conversation_status(conversation_id: int):
+    """Obtener estado de una conversación específica"""
+    
+    if not WHATSAPP_ENABLED:
+        raise HTTPException(status_code=503, detail="WhatsApp bot service not enabled")
+    
+    try:
+        status = await whatsapp_webhook_handler.get_conversation_status(conversation_id)
+        return status
+    except Exception as e:
+        logger.error(f"Error getting conversation status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
