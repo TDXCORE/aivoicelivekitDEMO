@@ -15,9 +15,14 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 
-# Importar función de creación de llamadas
+# Importar función de creación de llamadas (LiveKit - original)
 from create_outbound_call import create_outbound_call_from_webhook
 from microsoft_graph_client import graph_client
+
+# Importar nueva integración con Telnyx
+from telnyx_client import get_telnyx_client
+from telnyx_webhook_handler import handle_telnyx_webhook
+from telnyx_functions import handle_transfer_function, handle_schedule_function, handle_collect_email_function
 
 # Cargar variables de entorno
 load_dotenv(dotenv_path=".env.local")
@@ -35,6 +40,10 @@ app = FastAPI(
 
 # Token de seguridad para webhooks
 WEBHOOK_TOKEN = os.getenv("CHATWOOT_WEBHOOK_TOKEN", "default-secure-token-change-me")
+
+# Feature flag para usar Telnyx en lugar de LiveKit
+USE_TELNYX = os.getenv("USE_TELNYX_INSTEAD_OF_LIVEKIT", "false").lower() == "true"
+logger.info(f"Telnyx integration enabled: {USE_TELNYX}")
 
 @app.get("/")
 async def root():
@@ -97,8 +106,13 @@ async def chatwoot_webhook(request: Request, token: str):
         logger.info(f"Processing contact: {contact_data.get('name')} ({contact_data.get('phone')})")
         logger.info(f"Has email: {contact_data.get('has_email')}")
         
-        # Crear llamada saliente asíncrona
-        asyncio.create_task(create_outbound_call_from_webhook(contact_data))
+        # Crear llamada saliente - elegir sistema basado en feature flag
+        if USE_TELNYX:
+            logger.info("Using Telnyx for outbound call")
+            asyncio.create_task(create_telnyx_outbound_call(contact_data))
+        else:
+            logger.info("Using LiveKit for outbound call (legacy)")
+            asyncio.create_task(create_outbound_call_from_webhook(contact_data))
         
         return {
             "status": "call_queued",
@@ -142,6 +156,41 @@ def extract_contact_data(payload: Dict[str, Any]) -> Dict[str, Any]:
 def is_from_landing_page(contact_data: Dict[str, Any]) -> bool:
     """Verificar si el contacto viene de la landing page"""
     return contact_data.get("source") == "landing_page"
+
+async def create_telnyx_outbound_call(contact_data: Dict[str, Any]):
+    """
+    Crear llamada saliente usando Telnyx
+    Nueva función que reemplaza la funcionalidad de LiveKit
+    """
+    try:
+        telnyx_client = get_telnyx_client()
+        
+        # Preparar client_state con información del contacto
+        client_state = {
+            "chatwoot_contact_id": contact_data.get("id"),
+            "webhook_data": contact_data,
+            "source": "chatwoot_webhook",
+            "created_at": datetime.now().isoformat()
+        }
+        
+        # Obtener número de origen desde configuración
+        from_number = os.getenv("TELNYX_OUTBOUND_NUMBER", "+13052131234")
+        
+        # Crear llamada con Telnyx
+        result = await telnyx_client.create_outbound_call_with_assistant(
+            to=contact_data.get("phone"),
+            from_number=from_number,
+            client_state=client_state
+        )
+        
+        if result:
+            call_control_id = result["data"]["call_control_id"]
+            logger.info(f"Telnyx call created successfully: {call_control_id}")
+        else:
+            logger.error("Failed to create Telnyx call")
+            
+    except Exception as e:
+        logger.error(f"Error creating Telnyx outbound call: {str(e)}")
 
 @app.exception_handler(404)
 async def not_found_handler(request: Request, exc):
@@ -298,3 +347,130 @@ async def get_whatsapp_conversation_status(conversation_id: int):
     except Exception as e:
         logger.error(f"Error getting conversation status: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+# ============================================================================
+# TELNYX INTEGRATION ENDPOINTS
+# ============================================================================
+
+@app.post("/webhooks/telnyx")
+async def telnyx_webhook_endpoint(request: Request):
+    """
+    Endpoint principal para webhooks de Telnyx Voice API
+    Maneja eventos del ciclo de vida de las llamadas y conversaciones
+    """
+    if not USE_TELNYX:
+        raise HTTPException(status_code=503, detail="Telnyx integration not enabled")
+    
+    try:
+        return await handle_telnyx_webhook(request)
+    except Exception as e:
+        logger.error(f"Telnyx webhook error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/webhooks/telnyx/failover")
+async def telnyx_webhook_failover(request: Request):
+    """
+    Endpoint de respaldo para webhooks de Telnyx
+    """
+    if not USE_TELNYX:
+        raise HTTPException(status_code=503, detail="Telnyx integration not enabled")
+    
+    try:
+        logger.info("Processing Telnyx webhook via failover endpoint")
+        return await handle_telnyx_webhook(request)
+    except Exception as e:
+        logger.error(f"Telnyx failover webhook error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Telnyx AI Assistant Custom Function Endpoints
+
+@app.post("/telnyx/functions/transfer")
+async def telnyx_transfer_function(request: Request):
+    """
+    Función personalizada para transferencias de llamada
+    Llamada por el AI Assistant de Telnyx
+    """
+    if not USE_TELNYX:
+        raise HTTPException(status_code=503, detail="Telnyx integration not enabled")
+    
+    try:
+        return await handle_transfer_function(request)
+    except Exception as e:
+        logger.error(f"Telnyx transfer function error: {e}")
+        return {
+            "success": False,
+            "message": "Error técnico en la transferencia. Te conectaré con nuestro equipo principal.",
+            "action": "transfer_to_default"
+        }
+
+@app.post("/telnyx/functions/schedule")
+async def telnyx_schedule_function(request: Request):
+    """
+    Función personalizada para programar reuniones
+    Llamada por el AI Assistant de Telnyx
+    """
+    if not USE_TELNYX:
+        raise HTTPException(status_code=503, detail="Telnyx integration not enabled")
+    
+    try:
+        return await handle_schedule_function(request)
+    except Exception as e:
+        logger.error(f"Telnyx schedule function error: {e}")
+        return {
+            "success": False,
+            "message": "Tengo un problema técnico para programar la reunión. ¿Te parece si te transfiero con nuestro equipo?",
+            "action": "offer_transfer_on_error"
+        }
+
+@app.post("/telnyx/functions/collect_email")
+async def telnyx_collect_email_function(request: Request):
+    """
+    Función personalizada para recolectar y validar emails
+    Llamada por el AI Assistant de Telnyx
+    """
+    if not USE_TELNYX:
+        raise HTTPException(status_code=503, detail="Telnyx integration not enabled")
+    
+    try:
+        return await handle_collect_email_function(request)
+    except Exception as e:
+        logger.error(f"Telnyx collect email function error: {e}")
+        return {
+            "success": False,
+            "message": "Tengo un problema técnico. ¿Podrías repetirme tu email?",
+            "action": "technical_error"
+        }
+
+@app.get("/health/telnyx")
+async def telnyx_health_check():
+    """Health check específico para integración Telnyx"""
+    
+    if not USE_TELNYX:
+        return {
+            'status': 'disabled',
+            'service': 'telnyx_integration',
+            'message': 'Telnyx integration is not enabled'
+        }
+    
+    try:
+        # Verificar configuración de Telnyx
+        telnyx_client = get_telnyx_client()
+        
+        return {
+            'status': 'healthy',
+            'service': 'telnyx_integration',
+            'timestamp': datetime.now().isoformat(),
+            'configuration': {
+                'api_key_configured': bool(os.getenv('TELNYX_API_KEY')),
+                'connection_id_configured': bool(os.getenv('TELNYX_CONNECTION_ID')),
+                'assistant_id_configured': bool(os.getenv('TELNYX_ASSISTANT_ID')),
+                'outbound_number_configured': bool(os.getenv('TELNYX_OUTBOUND_NUMBER'))
+            }
+        }
+    except Exception as e:
+        logger.error(f"Telnyx health check error: {e}")
+        return {
+            'status': 'error',
+            'service': 'telnyx_integration',
+            'error': str(e)
+        }
