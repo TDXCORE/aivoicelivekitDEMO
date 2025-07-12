@@ -14,7 +14,7 @@ import openai
 import os
 
 from telnyx_client import get_telnyx_client
-from chatwoot_summary_integration import send_summary_to_chatwoot
+from chatwoot_summary_integration import send_bot_summary_to_chatwoot
 # Note: WhatsApp message will be sent via Chatwoot webhook trigger
 # from whatsapp_client import send_whatsapp_message
 
@@ -136,19 +136,23 @@ async def handle_conversation_ended(payload: Dict[str, Any]):
         summary = await generate_conversation_summary(transcript, client_state)
         
         # Send summary to Chatwoot (reuse existing integration)
-        chatwoot_contact_id = client_state.get("chatwoot_contact_id")
-        if chatwoot_contact_id:
-            await send_summary_to_chatwoot(
-                contact_id=chatwoot_contact_id,
-                summary=summary,
-                call_duration=duration,
-                outcome="completed",
-                phone_number=client_state.get("webhook_data", {}).get("phone_number", ""),
-                agent_name="Telnyx AI Assistant"
+        webhook_data = client_state.get("webhook_data", {})
+        phone_number = webhook_data.get("phone", "") or webhook_data.get("phone_number", "")
+        
+        if phone_number:
+            success = await send_summary_to_chatwoot_async(
+                phone_number=phone_number,
+                conversation_summary=summary,
+                call_duration=f"{duration}s" if duration else None,
+                call_outcome="completed"
             )
-            logger.info(f"Summary sent to Chatwoot for contact {chatwoot_contact_id}")
+            
+            if success:
+                logger.info(f"Summary sent to Chatwoot for phone {phone_number}")
+            else:
+                logger.error(f"Failed to send summary to Chatwoot for phone {phone_number}")
         else:
-            logger.warning("No Chatwoot contact ID found in client state")
+            logger.warning("No phone number found in client state")
             
     except Exception as e:
         logger.error(f"Error handling conversation ended: {str(e)}")
@@ -277,6 +281,31 @@ async def trigger_whatsapp_followup(client_state: dict):
         
     except Exception as e:
         logger.error(f"Error sending WhatsApp followup: {str(e)}")
+
+async def send_summary_to_chatwoot_async(phone_number: str, conversation_summary: str, 
+                                        call_duration: str = None, call_outcome: str = None) -> bool:
+    """
+    Async wrapper for sending summary to Chatwoot
+    """
+    try:
+        import asyncio
+        loop = asyncio.get_event_loop()
+        
+        # Run the sync function in a thread pool
+        result = await loop.run_in_executor(
+            None, 
+            send_bot_summary_to_chatwoot,
+            phone_number,
+            conversation_summary,
+            call_duration,
+            call_outcome
+        )
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error in async Chatwoot summary: {str(e)}")
+        return False
 
 async def send_whatsapp_via_chatwoot(contact_id: int, message: str):
     """
