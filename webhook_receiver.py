@@ -455,7 +455,7 @@ except ImportError as e:
     logger.warning(f"WhatsApp modules not available: {e}")
     WHATSAPP_ENABLED = False
 
-@app.route('/webhooks/whatsapp/<token>', methods=['POST'])
+@app.post('/webhooks/whatsapp/{token}')
 async def whatsapp_webhook_endpoint(token: str, request: Request):
     """Endpoint WhatsApp - completamente separado del voice system"""
     
