@@ -144,24 +144,31 @@ class TDXWhatsAppBot:
             return None
     
     async def check_automatic_schedule_keywords(self, message_content: str) -> Optional[str]:
-        """Detectar keywords de agendamiento automático"""
+        """Detectar keywords de agendamiento - pero solo para casos SIMPLES sin fechas/horas específicas"""
         try:
-            # Keywords para agendamiento
-            SCHEDULE_KEYWORDS = [
-                "agendar", "agenda", "agendo", "programar", "programa",
-                "reunión", "reunion", "cita", "meeting", "encuentro",
-                "disponibilidad", "horario", "hora", "cuando", "cuándo",
-                "reservar", "apartar", "calendario", "fecha"
-            ]
+            # Keywords para agendamiento simple (solo "agendar" sin detalles)
+            SIMPLE_SCHEDULE_KEYWORDS = ["agendar", "programar", "disponibilidad", "horario"]
             
             message_lower = message_content.lower()
             
-            # Verificar si alguna keyword está presente
-            for keyword in SCHEDULE_KEYWORDS:
-                if keyword in message_lower:
-                    logger.info(f"🚨 AUTOMATIC SCHEDULE triggered by keyword: '{keyword}' in message: {message_content[:50]}")
+            # Detectar si el mensaje tiene fechas/horas específicas
+            time_indicators = ["mañana", "lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo", 
+                             "am", "pm", ":", "hora", "hoy", "tarde", "mañana", "noche",
+                             "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"]
+            
+            has_specific_time = any(indicator in message_lower for indicator in time_indicators)
+            
+            # Si tiene tiempo específico, NO usar detección automática - dejar que OpenAI lo procese
+            if has_specific_time:
+                logger.info(f"⏰ Scheduling message with specific time detected: {message_content[:50]} - passing to OpenAI")
+                return None  # Dejar que OpenAI use schedule_meeting_whatsapp
+            
+            # Solo para mensajes simples como "quiero agendar" sin detalles
+            for keyword in SIMPLE_SCHEDULE_KEYWORDS:
+                if keyword in message_lower and not has_specific_time:
+                    logger.info(f"📅 Simple schedule request triggered by: '{keyword}' - showing availability")
                     
-                    # Activar check_availability INMEDIATAMENTE
+                    # Solo mostrar disponibilidad para agendamiento simple
                     availability_response = await self.check_availability_whatsapp()
                     
                     # Enviar respuesta inmediata
@@ -169,19 +176,10 @@ class TDXWhatsAppBot:
                         self.conversation_id, availability_response, self.user_id
                     )
                     
-                    # Log de agendamiento automático
-                    self.conversation_log.append({
-                        'turn': len(self.conversation_log) + 1,
-                        'type': 'automatic_schedule',
-                        'content': f"Auto-schedule triggered by: {keyword}",
-                        'response': availability_response,
-                        'timestamp': datetime.now().isoformat()
-                    })
-                    
-                    logger.info(f"✅ Automatic schedule check completed for {self.contact_name}")
+                    logger.info(f"✅ Simple availability check completed for {self.contact_name}")
                     return availability_response
             
-            # No keywords detectadas, continuar flujo normal
+            # No keywords simples detectadas, continuar flujo normal
             return None
             
         except Exception as e:
@@ -248,19 +246,29 @@ PERSONALIDAD: Vendedor agresivo, respuestas rápidas y directas, máximo 3 inter
 OBJETIVO: Agendar reunión o transferir a humano.
 
 HERRAMIENTAS DISPONIBLES:
-- check_availability_whatsapp: Ver disponibilidad calendario
-- schedule_meeting_whatsapp: Agendar reunión 
+- check_availability_whatsapp: Ver disponibilidad calendario (solo para consultas generales)
+- schedule_meeting_whatsapp: Agendar reunión CON FECHA Y HORA ESPECÍFICA
 - transfer_to_human_whatsapp: Transferir a humano
 - collect_email_whatsapp: Recolectar email
 - qualify_prospect_whatsapp: Calificar cliente BANT
 
-RESPUESTAS SEGÚN SITUACIÓN:
+USO DE HERRAMIENTAS - MUY IMPORTANTE:
 
-Si dice "hola" primera vez: "¡Hola {self.contact_name}! Soy Mati de TDX. ¿Qué desafío tecnológico específico tiene su empresa?"
+1. Si dice fecha/hora específica (ej: "mañana 3pm", "lunes 10am", "hoy tarde"):
+   - USA schedule_meeting_whatsapp CON la fecha y hora que menciona
+   - Convierte fechas relativas a formato YYYY-MM-DD
+   - Convierte horas a formato HH:MM (24 horas)
 
-Si menciona "agendar", "reunión", "cita": Usar check_availability_whatsapp INMEDIATAMENTE.
+2. Si dice solo "agendar" sin especificar cuándo:
+   - USA check_availability_whatsapp para mostrar opciones
 
-Si menciona "ejecutivo", "vendedor", "humano", "agente": Usar transfer_to_human_whatsapp INMEDIATAMENTE.
+3. Si menciona "ejecutivo", "vendedor", "humano", "agente":
+   - USA transfer_to_human_whatsapp INMEDIATAMENTE
+
+EJEMPLOS DE CONVERSIÓN:
+- "mañana 3pm" → schedule_meeting_whatsapp(date="2025-07-27", time="15:00")
+- "lunes 10am" → schedule_meeting_whatsapp(date="2025-07-28", time="10:00")
+- "hoy 2pm" → schedule_meeting_whatsapp(date="2025-07-26", time="14:00")
 
 SIEMPRE responde en español, sé directo, usa las herramientas disponibles."""
         
