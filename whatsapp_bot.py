@@ -59,6 +59,11 @@ class TDXWhatsAppBot:
             if transfer_triggered:
                 return transfer_triggered
             
+            # DETECCIÓN AUTOMÁTICA DE KEYWORDS DE AGENDAMIENTO - CRÍTICO
+            schedule_triggered = await self.check_automatic_schedule_keywords(message_content)
+            if schedule_triggered:
+                return schedule_triggered
+            
             # Generar respuesta
             response = await self.generate_contextual_response(message_content)
             
@@ -138,6 +143,51 @@ class TDXWhatsAppBot:
             logger.error(f"Error in automatic transfer detection: {e}")
             return None
     
+    async def check_automatic_schedule_keywords(self, message_content: str) -> Optional[str]:
+        """Detectar keywords de agendamiento automático"""
+        try:
+            # Keywords para agendamiento
+            SCHEDULE_KEYWORDS = [
+                "agendar", "agenda", "agendo", "programar", "programa",
+                "reunión", "reunion", "cita", "meeting", "encuentro",
+                "disponibilidad", "horario", "hora", "cuando", "cuándo",
+                "reservar", "apartar", "calendario", "fecha"
+            ]
+            
+            message_lower = message_content.lower()
+            
+            # Verificar si alguna keyword está presente
+            for keyword in SCHEDULE_KEYWORDS:
+                if keyword in message_lower:
+                    logger.info(f"🚨 AUTOMATIC SCHEDULE triggered by keyword: '{keyword}' in message: {message_content[:50]}")
+                    
+                    # Activar check_availability INMEDIATAMENTE
+                    availability_response = await self.check_availability_whatsapp()
+                    
+                    # Enviar respuesta inmediata
+                    await self.chatwoot_client.send_message_with_typing(
+                        self.conversation_id, availability_response, self.user_id
+                    )
+                    
+                    # Log de agendamiento automático
+                    self.conversation_log.append({
+                        'turn': len(self.conversation_log) + 1,
+                        'type': 'automatic_schedule',
+                        'content': f"Auto-schedule triggered by: {keyword}",
+                        'response': availability_response,
+                        'timestamp': datetime.now().isoformat()
+                    })
+                    
+                    logger.info(f"✅ Automatic schedule check completed for {self.contact_name}")
+                    return availability_response
+            
+            # No keywords detectadas, continuar flujo normal
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error in automatic schedule detection: {e}")
+            return None
+    
     async def send_response_with_ux(self, response: str):
         """Enviar respuesta con UX mejorado - AGRESIVO COMO BOT DE VOZ"""
         # Quick replies agresivos para cierre inmediato
@@ -168,8 +218,8 @@ class TDXWhatsAppBot:
             response = await self.openai_client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=messages,
-                temperature=0.7,
-                max_tokens=400,
+                temperature=0.3,
+                max_tokens=200,
                 tools=self.get_whatsapp_tools(),
                 tool_choice="auto"
             )
@@ -188,64 +238,31 @@ class TDXWhatsAppBot:
         """Construir contexto de conversación optimizado"""
         webhook_email = self.prospect_info.get('email')
         
-        system_prompt = f"""
-        Eres Mati, asistente virtual de TDX. SOY UN VENDEDOR EXPERTO MUY ENTUSIASMADO.
-        
-        📋 CONTEXTO DEL CLIENTE:
-        • Nombre: {self.contact_name}
-        • Empresa: {self.company_name}  
-        • Email: {webhook_email if webhook_email else 'Pendiente de recolectar'}
-        • Canal: WhatsApp
-        • Conversación iniciada: {self.session_start_time.strftime('%H:%M')}
-        
-        🚀 PERSONALIDAD Y ENERGÍA CRÍTICA:
-        • VELOCIDAD: Responde MUY RÁPIDO como vendedor experto entusiasmado
-        • ENERGÍA: Muy emocionado por la oportunidad de ayudar  
-        • CLARIDAD: Mensajes cortos pero SIEMPRE comprensibles
-        • EMPATÍA: Usa palabras reales (te entiendo, claro, perfecto, genial)
-        • DIRECTIVIDAD: Ir directo al grano, máximo 3 intercambios antes de calificar/transferir/agendar
-        
-        🎯 OBJETIVO ULTRA-DIRECTO: Calificar lead → agendar reunión O transferir a humano
-        
-        📱 ESTILO WHATSAPP AGRESIVO:
-        • Mensajes cortos y DIRECTOS (máx 2 líneas por punto)
-        • Emojis apropiados pero sin exceso
-        • NUNCA conversación extensa - ir al cierre
-        • Preguntas MUY específicas y directas
-        • NO explicaciones largas sobre servicios
-        
-        🔧 ESTADO ACTUAL: {self.awaiting_response_type or 'conversacion_general'}
-        
-        🚀 FLUJO ULTRA-DIRECTO (MÁXIMO 3 INTERCAMBIOS):
-        1. Saludo inteligente personalizado
-        2. Identificar dolor específico + CALIFICAR con qualify_prospect_whatsapp  
-        3. Ofrecer reunión estratégica INMEDIATA o transferir a ejecutivo YA
-        
-        HERRAMIENTAS DISPONIBLES:
-        • qualify_prospect_whatsapp: USAR SIEMPRE después de identificar dolor
-        • check_availability_whatsapp: Consultar disponibilidad calendario
-        • schedule_meeting_whatsapp: Agendar reunión confirmada
-        • transfer_to_human_whatsapp: Escalamiento a humano
-        • collect_email_whatsapp: Recolectar email si no está disponible
-        
-        SCRIPT EXACTO SEGÚN INFORMACIÓN:
-        
-        CON información del webhook:
-        "¡Hola {self.contact_name}! Soy Mati asistente virtual de TDX. Le contacto por su interés en nuestras soluciones de inteligencia artificial. ¿Qué desafío tecnológico específico tiene que lo lleva a consultar este tipo de soluciones?"
-        
-        SIN información del webhook:
-        "¡Hola! Soy Mati asistente virtual de TDX. Le contacto por su interés en nuestras soluciones de inteligencia artificial. ¿Con quién tengo el gusto y qué desafío tecnológico específico tiene en su empresa?"
-        
-        GANCHO DE VALOR (después de identificar dolor):
-        "Entendido. Ese [dolor específico] es exactamente lo que la inteligencia artificial resuelve. Empresas similares han visto mejoras drásticas. ¿Prefiere una reunión estratégica de 30 minutos con un consultor esta semana, o lo conecto ahora mismo con un ejecutivo de ventas?"
-        
-        DETECCIÓN DE TRANSFERENCIA AUTOMÁTICA:
-        Si el cliente menciona CUALQUIERA de estas palabras: "ejecutivo", "vendedor", "asesor", "consultor", "especialista", "hablar con alguien", "persona real", "humano", "representante", "agente", "gerente", "director", "supervisor", "jefe", "experto", "técnico", "ingeniero", "quiero hablar con", "me conecta con", "transfiere", "transferir", "no quiero bot", "quiero persona", "alguien más", "comunicar con", "conectar con", "pasar con"
-        
-        ACCIÓN: Transferir INMEDIATAMENTE usando transfer_to_human_whatsapp SIN preguntar.
-        
-        Mantén MÁXIMA VELOCIDAD y DIRECTIVIDAD. Nunca converses más de 3 intercambios sin calificar o transferir.
-        """
+        system_prompt = f"""Eres Mati, asistente virtual de TDX - vendedor experto MUY entusiasmado.
+
+CLIENTE: {self.contact_name} de {self.company_name}
+EMAIL: {webhook_email if webhook_email else 'Pendiente'}
+
+PERSONALIDAD: Vendedor agresivo, respuestas rápidas y directas, máximo 3 intercambios.
+
+OBJETIVO: Agendar reunión o transferir a humano.
+
+HERRAMIENTAS DISPONIBLES:
+- check_availability_whatsapp: Ver disponibilidad calendario
+- schedule_meeting_whatsapp: Agendar reunión 
+- transfer_to_human_whatsapp: Transferir a humano
+- collect_email_whatsapp: Recolectar email
+- qualify_prospect_whatsapp: Calificar cliente BANT
+
+RESPUESTAS SEGÚN SITUACIÓN:
+
+Si dice "hola" primera vez: "¡Hola {self.contact_name}! Soy Mati de TDX. ¿Qué desafío tecnológico específico tiene su empresa?"
+
+Si menciona "agendar", "reunión", "cita": Usar check_availability_whatsapp INMEDIATAMENTE.
+
+Si menciona "ejecutivo", "vendedor", "humano", "agente": Usar transfer_to_human_whatsapp INMEDIATAMENTE.
+
+SIEMPRE responde en español, sé directo, usa las herramientas disponibles."""
         
         messages = [{"role": "system", "content": system_prompt}]
         
