@@ -187,25 +187,10 @@ class TDXWhatsAppBot:
             return None
     
     async def send_response_with_ux(self, response: str):
-        """Enviar respuesta con UX mejorado - AGRESIVO COMO BOT DE VOZ"""
-        # Quick replies agresivos para cierre inmediato
-        enhanced_response = response
-        
-        # Quick replies para agendar INMEDIATO si se menciona reunión
-        if 'reunión' in response.lower() or 'disponibilidad' in response.lower():
-            enhanced_response += "\n\n📅 OPCIONES INMEDIATAS:\n• 📅 Agendar reunión AHORA\n• 👨‍💼 Hablar con ejecutivo YA"
-        
-        # Quick replies para transferencia si hay problemas
-        elif any(word in response.lower() for word in ['complejo', 'difícil', 'no entiendo', 'problema']):
-            enhanced_response += "\n\n🚀 ACCIÓN INMEDIATA:\n• 👨‍💼 Conectar con ejecutivo\n• 📞 Llamada con especialista"
-        
-        # Quick replies de cierre para consultas generales
-        elif '?' in response and len(self.conversation_log) >= 4:  # Después de 2 intercambios
-            enhanced_response += "\n\n⚡ DECIDAMOS AHORA:\n• 📅 Agendar reunión\n• 👨‍💼 Hablar con ejecutivo\n• 💡 Ver soluciones IA"
-        
-        # Enviar con typing y rate limiting optimizado
+        """Enviar respuesta natural sin opciones predefinidas"""
+        # Enviar respuesta directa sin quick replies
         await self.chatwoot_client.send_message_with_typing(
-            self.conversation_id, enhanced_response, self.user_id
+            self.conversation_id, response, self.user_id
         )
     
     async def generate_contextual_response(self, user_message: str) -> str:
@@ -236,41 +221,44 @@ class TDXWhatsAppBot:
         """Construir contexto de conversación optimizado"""
         webhook_email = self.prospect_info.get('email')
         
-        system_prompt = f"""Eres Mati, asistente virtual de TDX - vendedor experto MUY entusiasmado.
+        system_prompt = f"""Eres Mati, ejecutivo comercial de TDX. Conversación natural y fluida.
 
 CLIENTE: {self.contact_name} de {self.company_name}
 EMAIL: {webhook_email if webhook_email else 'Pendiente'}
 
-PERSONALIDAD: Vendedor agresivo, respuestas rápidas y directas, máximo 3 intercambios.
+PERSONALIDAD: Profesional, directo pero amigable. Conversación natural como humano real.
 
-OBJETIVO: Agendar reunión o transferir a humano.
+OBJETIVO: Agendar reunión de forma conversacional y eficiente.
 
 HERRAMIENTAS DISPONIBLES:
-- check_availability_whatsapp: Ver disponibilidad calendario (solo para consultas generales)
-- schedule_meeting_whatsapp: Agendar reunión CON FECHA Y HORA ESPECÍFICA
-- transfer_to_human_whatsapp: Transferir a humano
-- collect_email_whatsapp: Recolectar email
-- qualify_prospect_whatsapp: Calificar cliente BANT
+- schedule_meeting_whatsapp: Agendar reunión con fecha/hora específica
+- check_availability_whatsapp: Consultar disponibilidad (solo si necesario)
+- collect_email_whatsapp: Guardar email del cliente
+- transfer_to_human_whatsapp: Transferir a humano si es necesario
 
-USO DE HERRAMIENTAS - MUY IMPORTANTE:
+REGLAS DE CONVERSACIÓN:
+1. NUNCA uses listas con viñetas o opciones múltiple
+2. NUNCA agregues "OPCIONES:" o menús
+3. Habla naturalmente como persona real
+4. Máximo 2-3 oraciones por respuesta
 
-1. Si dice fecha/hora específica (ej: "mañana 3pm", "lunes 10am", "hoy tarde"):
-   - USA schedule_meeting_whatsapp CON la fecha y hora que menciona
-   - Convierte fechas relativas a formato YYYY-MM-DD
-   - Convierte horas a formato HH:MM (24 horas)
+USO OBLIGATORIO DE HERRAMIENTAS:
+- Email detectado (ej: "freddyrincones@gmail.com") → USAR collect_email_whatsapp INMEDIATAMENTE
+- Fecha/hora específica (ej: "lunes 3pm") → USAR schedule_meeting_whatsapp INMEDIATAMENTE  
+- Solicitud de agendamiento sin detalles → USAR check_availability_whatsapp
+- Solicitud de humano → USAR transfer_to_human_whatsapp
 
-2. Si dice solo "agendar" sin especificar cuándo:
-   - USA check_availability_whatsapp para mostrar opciones
+CONVERSIÓN DE FECHAS (hoy es 2025-07-26):
+- "lunes" = 2025-07-28 (próximo lunes)
+- "mañana" = 2025-07-27  
+- "3pm" = "15:00"
+- "10am" = "10:00"
 
-3. Si menciona "ejecutivo", "vendedor", "humano", "agente":
-   - USA transfer_to_human_whatsapp INMEDIATAMENTE
+DETECCIÓN DE EMAILS:
+- Cualquier texto con @ y dominio = EMAIL → usar collect_email_whatsapp
+- Ejemplo: "freddyrincones@gmail.com" = EMAIL válido
 
-EJEMPLOS DE CONVERSIÓN:
-- "mañana 3pm" → schedule_meeting_whatsapp(date="2025-07-27", time="15:00")
-- "lunes 10am" → schedule_meeting_whatsapp(date="2025-07-28", time="10:00")
-- "hoy 2pm" → schedule_meeting_whatsapp(date="2025-07-26", time="14:00")
-
-SIEMPRE responde en español, sé directo, usa las herramientas disponibles."""
+Responde como ejecutivo comercial real, no como bot."""
         
         messages = [{"role": "system", "content": system_prompt}]
         
@@ -341,13 +329,13 @@ SIEMPRE responde en español, sé directo, usa las herramientas disponibles."""
                 "type": "function",
                 "function": {
                     "name": "collect_email_whatsapp",
-                    "description": "Solicitar email al cliente si no está disponible en el sistema",
+                    "description": "SIEMPRE usar cuando el cliente proporciona un email address (ej: nombre@empresa.com). Guardar el email en el sistema.",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "email": {
                                 "type": "string",
-                                "description": "Email proporcionado por el cliente"
+                                "description": "Email address que proporciona el cliente (ej: freddyrincones@gmail.com)"
                             }
                         },
                         "required": ["email"]
