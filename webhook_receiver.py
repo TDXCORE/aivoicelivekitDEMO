@@ -45,6 +45,12 @@ WEBHOOK_TOKEN = os.getenv("CHATWOOT_WEBHOOK_TOKEN", "default-secure-token-change
 USE_TELNYX = os.getenv("USE_TELNYX_INSTEAD_OF_LIVEKIT", "false").lower() == "true"
 logger.info(f"Telnyx integration enabled: {USE_TELNYX}")
 
+# Feature flags para fallback inteligente
+WHATSAPP_FALLBACK_ENABLED = os.getenv("WHATSAPP_FALLBACK_ENABLED", "true").lower() == "true"
+CALL_TIMEOUT_SECONDS = int(os.getenv("TELNYX_CALL_TIMEOUT_SECONDS", "30"))
+logger.info(f"WhatsApp fallback enabled: {WHATSAPP_FALLBACK_ENABLED}")
+logger.info(f"Call timeout for fallback: {CALL_TIMEOUT_SECONDS}s")
+
 @app.get("/")
 async def root():
     """Endpoint de salud para verificar que el servidor esté funcionando"""
@@ -56,10 +62,22 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    """Endpoint de health check"""
+    """Endpoint de health check con información de fallback"""
     return {
         "status": "healthy",
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now().isoformat(),
+        "integrations": {
+            "telnyx_enabled": USE_TELNYX,
+            "whatsapp_enabled": WHATSAPP_ENABLED,
+            "whatsapp_fallback_enabled": WHATSAPP_FALLBACK_ENABLED,
+            "call_timeout_seconds": CALL_TIMEOUT_SECONDS
+        },
+        "fallback_config": {
+            "chatwoot_account_id": bool(os.getenv('VITE_CHATWOOT_ACCOUNT_ID')),
+            "chatwoot_api_token": bool(os.getenv('VITE_CHATWOOT_API_TOKEN')),
+            "whatsapp_inbox_id": bool(os.getenv('CHATWOOT_WHATSAPP_INBOX_ID')),
+            "telnyx_outbound_number": bool(os.getenv('TELNYX_OUTBOUND_NUMBER'))
+        }
     }
 
 @app.post("/webhooks/chatwoot/{token}")
@@ -159,7 +177,7 @@ def is_from_landing_page(contact_data: Dict[str, Any]) -> bool:
 
 async def create_telnyx_outbound_call(contact_data: Dict[str, Any]):
     """
-    Crear llamada saliente usando Telnyx
+    Crear llamada saliente usando Telnyx CON FALLBACK AUTOMÁTICO A WHATSAPP
     Nueva función que reemplaza la funcionalidad de LiveKit
     """
     try:
@@ -186,11 +204,197 @@ async def create_telnyx_outbound_call(contact_data: Dict[str, Any]):
         if result:
             call_control_id = result["data"]["call_control_id"]
             logger.info(f"Telnyx call created successfully: {call_control_id}")
+            
+            # NUEVO: Programar fallback automático a WhatsApp después de 30 segundos
+            asyncio.create_task(schedule_whatsapp_fallback(contact_data, call_control_id))
+            
+            return {
+                "status": "call_initiated",
+                "call_control_id": call_control_id,
+                "fallback_scheduled": True
+            }
         else:
-            logger.error("Failed to create Telnyx call")
+            logger.error("Failed to create Telnyx call - Triggering immediate WhatsApp fallback")
+            # Si falla la llamada inmediatamente, activar WhatsApp fallback
+            await trigger_whatsapp_fallback(contact_data, "call_creation_failed")
+            return {
+                "status": "call_failed_whatsapp_triggered",
+                "fallback_reason": "call_creation_failed"
+            }
             
     except Exception as e:
         logger.error(f"Error creating Telnyx outbound call: {str(e)}")
+        # En caso de error, activar WhatsApp fallback
+        await trigger_whatsapp_fallback(contact_data, f"call_error: {str(e)}")
+        return {
+            "status": "call_error_whatsapp_triggered",
+            "error": str(e)
+        }
+
+async def schedule_whatsapp_fallback(contact_data: Dict[str, Any], call_control_id: str):
+    """
+    Programar fallback automático a WhatsApp después de timeout de llamada
+    """
+    try:
+        # Timeout configurable para llamada (default 30 segundos)
+        call_timeout = int(os.getenv("TELNYX_CALL_TIMEOUT_SECONDS", "30"))
+        
+        logger.info(f"Scheduling WhatsApp fallback for call {call_control_id} in {call_timeout}s")
+        
+        # Esperar timeout
+        await asyncio.sleep(call_timeout)
+        
+        # Verificar si la llamada fue contestada (esto requeriría estado de llamada)
+        # Por simplificación, asumimos que si llegamos aquí, la llamada no fue contestada
+        
+        logger.info(f"Call timeout reached for {call_control_id} - Triggering WhatsApp fallback")
+        await trigger_whatsapp_fallback(contact_data, "call_timeout")
+        
+    except Exception as e:
+        logger.error(f"Error in WhatsApp fallback scheduling: {e}")
+
+async def trigger_whatsapp_fallback(contact_data: Dict[str, Any], reason: str):
+    """
+    Activar fallback a WhatsApp via Chatwoot cuando la llamada falla
+    """
+    if not WHATSAPP_ENABLED:
+        logger.warning("WhatsApp fallback not available - service disabled")
+        return {"status": "fallback_unavailable"}
+    
+    try:
+        phone = contact_data.get("phone")
+        contact_name = contact_data.get("name", "")
+        
+        if not phone:
+            logger.error("No phone number for WhatsApp fallback")
+            return {"status": "no_phone_number"}
+        
+        logger.info(f"🚨 Triggering WhatsApp fallback for {contact_name} ({phone}) - Reason: {reason}")
+        
+        # Mensaje inicial personalizado según razón del fallback
+        if reason == "call_timeout":
+            initial_message = f"""¡Hola {contact_name}! 👋
+
+Te llamé hace un momento pero no pude contactarte. Soy Mati, asistente virtual de TDX.
+
+Vi que te registraste mostrando interés en nuestras soluciones de IA 🚀
+
+¿Prefieres que conversemos por aquí sobre tu proyecto de transformación digital?
+
+¿Qué desafío tecnológico específico tienes en tu empresa? 💡"""
+        
+        elif reason == "call_creation_failed":
+            initial_message = f"""¡Hola {contact_name}! 👋
+
+Soy Mati, asistente virtual de TDX. Intenté llamarte pero hubo un problema técnico.
+
+Vi tu interés en nuestras soluciones de IA y quería contactarte inmediatamente 🚀
+
+¿Qué desafío tecnológico específico tiene tu empresa que te llevó a consultar sobre IA? 💡"""
+        
+        else:
+            initial_message = f"""¡Hola {contact_name}! 👋
+
+Soy Mati, asistente virtual de TDX. Vi que te registraste mostrando interés en nuestras soluciones de IA.
+
+¿Qué desafío tecnológico específico tiene tu empresa? 🚀"""
+        
+        # USAR CHATWOOT API PARA CREAR CONVERSACIÓN Y ENVIAR MENSAJE
+        # Esto usa la integración existente de Chatwoot sin crear nueva conexión WhatsApp
+        
+        result = await create_chatwoot_whatsapp_conversation(phone, contact_data, initial_message)
+        
+        if result.get("success"):
+            logger.info(f"✅ WhatsApp fallback triggered successfully for {phone}")
+            return {
+                "status": "whatsapp_fallback_triggered",
+                "phone": phone,
+                "conversation_id": result.get("conversation_id"),
+                "reason": reason
+            }
+        else:
+            logger.error(f"❌ WhatsApp fallback failed for {phone}")
+            return {
+                "status": "whatsapp_fallback_failed",
+                "error": result.get("error", "unknown_error")
+            }
+        
+    except Exception as e:
+        logger.error(f"Error triggering WhatsApp fallback: {e}")
+        return {"status": "fallback_error", "error": str(e)}
+
+async def create_chatwoot_whatsapp_conversation(phone: str, contact_data: Dict[str, Any], message: str):
+    """
+    Crear conversación en Chatwoot WhatsApp inbox y enviar mensaje inicial
+    Usa la integración existente de Chatwoot
+    """
+    try:
+        import requests
+        
+        # Usar las credenciales existentes de Chatwoot
+        account_id = os.getenv('VITE_CHATWOOT_ACCOUNT_ID')
+        api_token = os.getenv('VITE_CHATWOOT_API_TOKEN')
+        whatsapp_inbox_id = os.getenv('CHATWOOT_WHATSAPP_INBOX_ID')
+        
+        if not all([account_id, api_token, whatsapp_inbox_id]):
+            logger.error("Missing Chatwoot configuration for WhatsApp fallback")
+            return {"success": False, "error": "missing_config"}
+        
+        headers = {
+            'Content-Type': 'application/json',
+            'api_access_token': api_token
+        }
+        
+        # Crear contacto en Chatwoot si no existe
+        contact_payload = {
+            "name": contact_data.get("name", "WhatsApp Contact"),
+            "phone_number": phone,
+            "email": contact_data.get("email"),
+            "custom_attributes": {
+                "source": "whatsapp_fallback",
+                "original_source": contact_data.get("source", "webhook"),
+                "fallback_reason": "voice_call_failed",
+                "company_name": contact_data.get("company_name", ""),
+                "created_via": "telnyx_fallback"
+            }
+        }
+        
+        # Crear conversación en WhatsApp inbox
+        conversation_payload = {
+            "source_id": phone,
+            "inbox_id": whatsapp_inbox_id,
+            "contact": contact_payload,
+            "message": {
+                "content": message,
+                "message_type": "outgoing"
+            }
+        }
+        
+        # Llamada a API de Chatwoot
+        response = requests.post(
+            f"https://app.chatwoot.com/api/v1/accounts/{account_id}/conversations",
+            headers=headers,
+            json=conversation_payload,
+            timeout=10
+        )
+        
+        if response.status_code in [200, 201]:
+            conversation_data = response.json()
+            conversation_id = conversation_data.get("id")
+            
+            logger.info(f"✅ Chatwoot WhatsApp conversation created: {conversation_id}")
+            return {
+                "success": True,
+                "conversation_id": conversation_id,
+                "contact_id": conversation_data.get("meta", {}).get("contact", {}).get("id")
+            }
+        else:
+            logger.error(f"❌ Chatwoot API error: {response.status_code} - {response.text}")
+            return {"success": False, "error": f"api_error_{response.status_code}"}
+        
+    except Exception as e:
+        logger.error(f"Error creating Chatwoot WhatsApp conversation: {e}")
+        return {"success": False, "error": str(e)}
 
 @app.exception_handler(404)
 async def not_found_handler(request: Request, exc):

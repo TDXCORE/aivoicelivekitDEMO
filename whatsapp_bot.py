@@ -42,7 +42,7 @@ class TDXWhatsAppBot:
             self.openai_client = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
     
     async def process_message(self, message_content: str) -> Optional[str]:
-        """Procesar mensaje con manejo de estado y UX"""
+        """Procesar mensaje con manejo de estado y UX + detección automática de transferencia"""
         try:
             # Log mensaje del usuario
             self.conversation_log.append({
@@ -54,12 +54,17 @@ class TDXWhatsAppBot:
             
             logger.info(f"Processing WhatsApp message from {self.contact_name}: {message_content[:50]}...")
             
+            # DETECCIÓN AUTOMÁTICA DE KEYWORDS DE TRANSFERENCIA - CRÍTICO
+            transfer_triggered = await self.check_automatic_transfer_keywords(message_content)
+            if transfer_triggered:
+                return transfer_triggered
+            
             # Generar respuesta
             response = await self.generate_contextual_response(message_content)
             
-            # Verificar longitud para WhatsApp
-            if len(response) > 1000:
-                response = response[:990] + "...\n\n¿Te ayudo con algo más específico? 😊"
+            # Verificar longitud para WhatsApp (reducido de 1000 a 500)
+            if len(response) > 500:
+                response = response[:485] + "...\n\n¿Te ayudo con algo específico? 😊"
             
             # Enviar respuesta con UX mejorado
             await self.send_response_with_ux(response)
@@ -83,24 +88,74 @@ class TDXWhatsAppBot:
             )
             return error_response
     
+    async def check_automatic_transfer_keywords(self, message_content: str) -> Optional[str]:
+        """Detectar keywords de transferencia automática - IDÉNTICO AL BOT DE VOZ"""
+        try:
+            # Keywords exactos del bot de voz
+            TRANSFER_KEYWORDS = [
+                "ejecutivo", "vendedor", "asesor", "consultor", "especialista",
+                "hablar con alguien", "persona real", "humano", "representante", "agente",
+                "gerente", "director", "supervisor", "jefe",
+                "experto", "técnico", "ingeniero",
+                "quiero hablar con", "me conecta con", "transfiere", "transferir",
+                "no quiero bot", "quiero persona", "alguien más",
+                "comunicar con", "conectar con", "pasar con"
+            ]
+            
+            message_lower = message_content.lower()
+            
+            # Verificar si alguna keyword está presente
+            for keyword in TRANSFER_KEYWORDS:
+                if keyword in message_lower:
+                    logger.info(f"🚨 AUTOMATIC TRANSFER triggered by keyword: '{keyword}' in message: {message_content[:50]}")
+                    
+                    # Transferir INMEDIATAMENTE sin preguntar
+                    transfer_response = await self.transfer_to_human_whatsapp(
+                        f"Transferencia automática activada por keyword: '{keyword}'"
+                    )
+                    
+                    # Enviar respuesta inmediata
+                    await self.chatwoot_client.send_message_with_typing(
+                        self.conversation_id, transfer_response, self.user_id
+                    )
+                    
+                    # Log de transferencia automática
+                    self.conversation_log.append({
+                        'turn': len(self.conversation_log) + 1,
+                        'type': 'automatic_transfer',
+                        'content': f"Auto-transfer triggered by: {keyword}",
+                        'response': transfer_response,
+                        'timestamp': datetime.now().isoformat()
+                    })
+                    
+                    logger.info(f"✅ Automatic transfer completed for {self.contact_name}")
+                    return transfer_response
+            
+            # No keywords detectadas, continuar flujo normal
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error in automatic transfer detection: {e}")
+            return None
+    
     async def send_response_with_ux(self, response: str):
-        """Enviar respuesta con UX mejorado"""
-        # Añadir quick replies contextuales
+        """Enviar respuesta con UX mejorado - AGRESIVO COMO BOT DE VOZ"""
+        # Quick replies agresivos para cierre inmediato
         enhanced_response = response
         
-        # Quick reply para fallback a voz si la conversación se complica
-        if any(word in response.lower() for word in ['complejo', 'difícil', 'no entiendo', 'problema']):
-            enhanced_response += "\n\n💬 ¿Prefieres hablar por teléfono?\n📞 Puedo conectarte con nuestro asistente de voz"
+        # Quick replies para agendar INMEDIATO si se menciona reunión
+        if 'reunión' in response.lower() or 'disponibilidad' in response.lower():
+            enhanced_response += "\n\n📅 OPCIONES INMEDIATAS:\n• 📅 Agendar reunión AHORA\n• 👨‍💼 Hablar con ejecutivo YA"
         
-        # Quick reply para agendar si se menciona reunión
-        elif 'reunión' in response.lower() or 'disponibilidad' in response.lower():
-            enhanced_response += "\n\n📅 Opciones rápidas:\n• Esta semana\n• Próxima semana\n• Fecha específica"
+        # Quick replies para transferencia si hay problemas
+        elif any(word in response.lower() for word in ['complejo', 'difícil', 'no entiendo', 'problema']):
+            enhanced_response += "\n\n🚀 ACCIÓN INMEDIATA:\n• 👨‍💼 Conectar con ejecutivo\n• 📞 Llamada con especialista"
         
-        # Quick reply para más información
-        elif 'ayud' in response.lower() and '?' in response:
-            enhanced_response += "\n\n🤔 ¿Necesitas ayuda con algo específico?\n• Soluciones de IA\n• Agendar reunión\n• Hablar con ejecutivo"
+        # Quick replies de cierre para consultas generales
+        elif '?' in response and len(self.conversation_log) >= 4:  # Después de 2 intercambios
+            enhanced_response += "\n\n⚡ DECIDAMOS AHORA:\n• 📅 Agendar reunión\n• 👨‍💼 Hablar con ejecutivo\n• 💡 Ver soluciones IA"
         
-        # Enviar con typing y rate limiting
+        # Enviar con typing y rate limiting optimizado
         await self.chatwoot_client.send_message_with_typing(
             self.conversation_id, enhanced_response, self.user_id
         )
@@ -134,7 +189,7 @@ class TDXWhatsAppBot:
         webhook_email = self.prospect_info.get('email')
         
         system_prompt = f"""
-        Eres Mati, asistente virtual de TDX especializado en soluciones de IA.
+        Eres Mati, asistente virtual de TDX. SOY UN VENDEDOR EXPERTO MUY ENTUSIASMADO.
         
         📋 CONTEXTO DEL CLIENTE:
         • Nombre: {self.contact_name}
@@ -143,39 +198,53 @@ class TDXWhatsAppBot:
         • Canal: WhatsApp
         • Conversación iniciada: {self.session_start_time.strftime('%H:%M')}
         
-        🎯 OBJETIVO: Identificar necesidad de IA → agendar reunión estratégica o transferir a humano
+        🚀 PERSONALIDAD Y ENERGÍA CRÍTICA:
+        • VELOCIDAD: Responde MUY RÁPIDO como vendedor experto entusiasmado
+        • ENERGÍA: Muy emocionado por la oportunidad de ayudar  
+        • CLARIDAD: Mensajes cortos pero SIEMPRE comprensibles
+        • EMPATÍA: Usa palabras reales (te entiendo, claro, perfecto, genial)
+        • DIRECTIVIDAD: Ir directo al grano, máximo 3 intercambios antes de calificar/transferir/agendar
         
-        📱 ESTILO WHATSAPP:
-        • Mensajes cortos (máx 3 líneas por punto)
-        • Emojis moderados y apropiados
-        • Tono amigable pero profesional
-        • NO compartir datos sensibles en emojis (WhatsApp Policy)
-        • Preguntas directas y específicas
-        • Usa saltos de línea para legibilidad
+        🎯 OBJETIVO ULTRA-DIRECTO: Calificar lead → agendar reunión O transferir a humano
+        
+        📱 ESTILO WHATSAPP AGRESIVO:
+        • Mensajes cortos y DIRECTOS (máx 2 líneas por punto)
+        • Emojis apropiados pero sin exceso
+        • NUNCA conversación extensa - ir al cierre
+        • Preguntas MUY específicas y directas
+        • NO explicaciones largas sobre servicios
         
         🔧 ESTADO ACTUAL: {self.awaiting_response_type or 'conversacion_general'}
         
-        🚀 FLUJO DE CONVERSACIÓN:
-        1. Saludo personalizado si es el primer mensaje
-        2. Identificar necesidad específica de IA (soporte, ventas, automatización)
-        3. Calificar urgencia y presupuesto
-        4. Ofrecer reunión estratégica (preferido) o transferir a humano
-        5. Si acepta reunión: usar herramientas de agendamiento
-        6. Si rechaza o es muy complejo: transferir a humano
+        🚀 FLUJO ULTRA-DIRECTO (MÁXIMO 3 INTERCAMBIOS):
+        1. Saludo inteligente personalizado
+        2. Identificar dolor específico + CALIFICAR con qualify_prospect_whatsapp  
+        3. Ofrecer reunión estratégica INMEDIATA o transferir a ejecutivo YA
         
         HERRAMIENTAS DISPONIBLES:
+        • qualify_prospect_whatsapp: USAR SIEMPRE después de identificar dolor
         • check_availability_whatsapp: Consultar disponibilidad calendario
         • schedule_meeting_whatsapp: Agendar reunión confirmada
         • transfer_to_human_whatsapp: Escalamiento a humano
         • collect_email_whatsapp: Recolectar email si no está disponible
         
-        EJEMPLOS DE RESPUESTAS EFECTIVAS:
-        - "¡Hola {self.contact_name}! 👋 Soy Mati de TDX. Vi que te interesa la IA. ¿Qué desafío específico tiene {self.company_name}?"
-        - "Entiendo que necesitas automatización. ¿Es para soporte al cliente, ventas, o algún proceso específico? 🤖"
-        - "Perfecto. ¿Te conviene una reunión de 30 min esta semana para revisar soluciones específicas? 📅"
+        SCRIPT EXACTO SEGÚN INFORMACIÓN:
         
-        Mantén la conversación enfocada y siempre busca agendar reunión o transferir si es necesario.
-        Si el cliente menciona temas fuera de IA/tecnología, redirígelos amablemente.
+        CON información del webhook:
+        "¡Hola {self.contact_name}! Soy Mati asistente virtual de TDX. Le contacto por su interés en nuestras soluciones de inteligencia artificial. ¿Qué desafío tecnológico específico tiene que lo lleva a consultar este tipo de soluciones?"
+        
+        SIN información del webhook:
+        "¡Hola! Soy Mati asistente virtual de TDX. Le contacto por su interés en nuestras soluciones de inteligencia artificial. ¿Con quién tengo el gusto y qué desafío tecnológico específico tiene en su empresa?"
+        
+        GANCHO DE VALOR (después de identificar dolor):
+        "Entendido. Ese [dolor específico] es exactamente lo que la inteligencia artificial resuelve. Empresas similares han visto mejoras drásticas. ¿Prefiere una reunión estratégica de 30 minutos con un consultor esta semana, o lo conecto ahora mismo con un ejecutivo de ventas?"
+        
+        DETECCIÓN DE TRANSFERENCIA AUTOMÁTICA:
+        Si el cliente menciona CUALQUIERA de estas palabras: "ejecutivo", "vendedor", "asesor", "consultor", "especialista", "hablar con alguien", "persona real", "humano", "representante", "agente", "gerente", "director", "supervisor", "jefe", "experto", "técnico", "ingeniero", "quiero hablar con", "me conecta con", "transfiere", "transferir", "no quiero bot", "quiero persona", "alguien más", "comunicar con", "conectar con", "pasar con"
+        
+        ACCIÓN: Transferir INMEDIATAMENTE usando transfer_to_human_whatsapp SIN preguntar.
+        
+        Mantén MÁXIMA VELOCIDAD y DIRECTIVIDAD. Nunca converses más de 3 intercambios sin calificar o transferir.
         """
         
         messages = [{"role": "system", "content": system_prompt}]
@@ -259,6 +328,39 @@ class TDXWhatsAppBot:
                         "required": ["email"]
                     }
                 }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "qualify_prospect_whatsapp",
+                    "description": "Calificar prospect usando metodología BANT (Budget, Authority, Need, Timeline)",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "budget_range": {
+                                "type": "string",
+                                "enum": ["10k-50k", "50k-100k", "100k+", "sin_presupuesto"],
+                                "description": "Rango de presupuesto del cliente"
+                            },
+                            "authority_level": {
+                                "type": "string",
+                                "enum": ["decision_maker", "influencer", "user"],
+                                "description": "Nivel de autoridad del contacto"
+                            },
+                            "need_urgency": {
+                                "type": "string",
+                                "enum": ["high", "medium", "low"],
+                                "description": "Urgencia de la necesidad"
+                            },
+                            "timeline": {
+                                "type": "string",
+                                "enum": ["immediate", "3_months", "6_months", "12_months+"],
+                                "description": "Timeline de implementación"
+                            }
+                        },
+                        "required": ["budget_range", "authority_level", "need_urgency", "timeline"]
+                    }
+                }
             }
         ]
     
@@ -284,6 +386,13 @@ class TDXWhatsAppBot:
             elif function_name == "collect_email_whatsapp":
                 return await self.collect_email_whatsapp(
                     function_args.get("email")
+                )
+            elif function_name == "qualify_prospect_whatsapp":
+                return await self.qualify_prospect_whatsapp(
+                    function_args.get("budget_range"),
+                    function_args.get("authority_level"),
+                    function_args.get("need_urgency"),
+                    function_args.get("timeline")
                 )
             else:
                 return "Disculpa, no pude procesar esa solicitud. ¿Puedes intentar de nuevo? 🤔"
@@ -410,6 +519,86 @@ Perfecto, ahora puedo enviarte la invitación de la reunión.
         except Exception as e:
             logger.error(f"Error collecting email: {e}")
             return "Hubo un problema guardando el email. ¿Puedes intentar de nuevo?"
+    
+    async def qualify_prospect_whatsapp(self, budget_range: str, authority_level: str, need_urgency: str, timeline: str) -> str:
+        """Tool: Calificar prospect usando metodología BANT - IDÉNTICA AL BOT DE VOZ"""
+        try:
+            logger.info(
+                f"qualifying WhatsApp prospect {self.contact_name}: Budget={budget_range}, Authority={authority_level}, Need={need_urgency}, Timeline={timeline}"
+            )
+            
+            # Marcar estado de conversación
+            self.awaiting_response_type = 'qualification_complete'
+            
+            # Score qualification - LÓGICA EXACTA DEL BOT DE VOZ
+            score = 0
+            if budget_range in ['50k-100k', '100k+']:
+                score += 25
+            elif budget_range == '10k-50k':
+                score += 15
+                
+            if authority_level == 'decision_maker':
+                score += 30
+            elif authority_level == 'influencer':
+                score += 20
+                
+            if need_urgency == 'high':
+                score += 25
+            elif need_urgency == 'medium':
+                score += 15
+                
+            if timeline in ['immediate', '3_months']:
+                score += 20
+            elif timeline == '6_months':
+                score += 10
+            
+            qualified = score >= 60
+            recommendation = "schedule_meeting" if qualified else "nurture_lead"
+            
+            # Guardar resultado en prospect_info para seguimiento
+            self.prospect_info.update({
+                'qualification_score': score,
+                'qualified': qualified,
+                'budget_range': budget_range,
+                'authority_level': authority_level,
+                'need_urgency': need_urgency,
+                'timeline': timeline,
+                'qualification_date': datetime.now().isoformat()
+            })
+            
+            # Generar respuesta basada en calificación
+            if qualified:
+                response = f"""✅ **Perfil calificado exitosamente** (Score: {score}/100)
+
+🎯 **Análisis de tu perfil:**
+• Presupuesto: {budget_range}
+• Autoridad: {authority_level}
+• Urgencia: {need_urgency}
+• Timeline: {timeline}
+
+**Recomendación:** Reunión estratégica inmediata 🚀
+
+¿Te parece bien que agendemos una reunión de 30 minutos esta semana para revisar soluciones específicas para {self.company_name}?"""
+
+            else:
+                response = f"""📊 **Análisis de perfil completado** (Score: {score}/100)
+
+🔍 **Tu perfil actual:**
+• Presupuesto: {budget_range}
+• Autoridad: {authority_level}
+• Urgencia: {need_urgency}
+• Timeline: {timeline}
+
+**Recomendación:** Te mantendré informado de nuevas soluciones que se ajusten mejor a tu perfil actual.
+
+¿Te gustaría que un especialista te contacte cuando tengamos opciones más adecuadas? 📞"""
+
+            logger.info(f"WhatsApp prospect qualification completed: {self.contact_name} - Score: {score} - Qualified: {qualified}")
+            return response
+            
+        except Exception as e:
+            logger.error(f"Error qualifying WhatsApp prospect: {e}")
+            return "⚠️ Hubo un problema evaluando tu perfil.\n\nUn especialista revisará tu caso personalmente. ¿Te parece bien?"
     
     async def create_handoff_summary(self, handoff_reason: str):
         """Crear resumen para el agente humano"""

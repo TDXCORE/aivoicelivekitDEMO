@@ -19,12 +19,12 @@ class ChatwootWhatsAppClient:
             'api_access_token': self.api_token
         }
         
-        # Rate limiting mejorado (6s por usuario)
+        # Rate limiting optimizado para ventas agresivas (3s por usuario)
         self.user_rate_limits: Dict[str, datetime] = {}
-        self.rate_limit_duration = int(os.getenv('WHATSAPP_RATE_LIMIT_SECONDS', '6'))
+        self.rate_limit_duration = int(os.getenv('WHATSAPP_RATE_LIMIT_SECONDS', '3'))
     
     async def check_rate_limit(self, user_id: str) -> bool:
-        """Rate limiting: 1 mensaje cada 6s por usuario"""
+        """Rate limiting: 1 mensaje cada 3s por usuario (optimizado para ventas agresivas)"""
         now = datetime.now()
         last_message = self.user_rate_limits.get(user_id)
         
