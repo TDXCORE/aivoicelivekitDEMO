@@ -30,6 +30,10 @@ class WhatsAppWebhookHandler:
             # 1. Validación de seguridad y deduplicación
             webhook_data = await self.security.validate_webhook(request)
             
+            # 1.1. Manejo de mensajes duplicados
+            if webhook_data is None:
+                return {'status': 'ignored', 'reason': 'duplicate_message'}
+            
             # 2. Verificar si el mensaje debe ser procesado
             processable, reason = self.security.is_processable_message(webhook_data)
             if not processable:

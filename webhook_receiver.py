@@ -678,3 +678,27 @@ async def telnyx_health_check():
             'service': 'telnyx_integration',
             'error': str(e)
         }
+
+# ============================================================================
+# SERVIDOR PRINCIPAL
+# ============================================================================
+
+if __name__ == "__main__":
+    import uvicorn
+    
+    # Configuración del servidor
+    port = int(os.getenv("WEBHOOK_PORT", 8000))
+    host = os.getenv("WEBHOOK_HOST", "0.0.0.0")
+    
+    logger.info(f"🚀 Starting TDX AI Voice + WhatsApp Bot Service on {host}:{port}")
+    logger.info(f"📱 WhatsApp webhook: http://{host}:{port}/webhooks/whatsapp/<token>")
+    logger.info(f"📞 Voice webhook: http://{host}:{port}/webhooks/chatwoot/<token>")
+    logger.info(f"💚 Health check: http://{host}:{port}/health")
+    
+    uvicorn.run(
+        app,
+        host=host,
+        port=port,
+        log_level="info",
+        access_log=True
+    )

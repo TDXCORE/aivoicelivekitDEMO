@@ -120,10 +120,11 @@ class WhatsAppWebhookSecurity:
             logger.error(f"Payload parsing error from IP {client_ip}: {e}")
             raise HTTPException(status_code=400, detail="Payload parsing error")
         
-        # 6. Deduplicación CRÍTICA
+        # 6. Deduplicación CRÍTICA - NO usar HTTPException para 200
         if self.is_duplicate_message(webhook_data):
-            # Retornar 200 para evitar reintentos de Chatwoot
-            raise HTTPException(status_code=200, detail="Duplicate message ignored")
+            # Retornar None para indicar duplicado
+            logger.info("Duplicate message detected - webhook ignored")
+            return None
         
         return webhook_data
     
