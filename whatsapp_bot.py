@@ -11,6 +11,8 @@ from microsoft_graph_client import graph_client
 from chatwoot_summary_integration import send_bot_summary_to_chatwoot
 from whatsapp_client import ChatwootWhatsAppClient
 
+logger = logging.getLogger("whatsapp-bot")
+
 # Import business hours validator
 try:
     from business_hours_validator import business_hours
@@ -19,8 +21,6 @@ try:
 except ImportError as e:
     BUSINESS_HOURS_AVAILABLE = False
     logger.error(f"❌ Business Hours Validator import failed: {e}")
-
-logger = logging.getLogger("whatsapp-bot")
 
 class TDXWhatsAppBot:
     def __init__(self, contact_name: str, company_name: str, prospect_info: Dict[str, Any], conversation_id: int):
