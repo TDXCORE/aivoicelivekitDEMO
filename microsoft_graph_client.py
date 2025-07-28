@@ -1,5 +1,6 @@
 """
 Microsoft Graph API client for calendar integration
+Added business_hours_validator integration for expanded scheduling
 """
 import os
 import logging
@@ -16,6 +17,15 @@ except ImportError as e:
     GRAPH_AVAILABLE = False
     logging.error(f"❌ Microsoft Graph SDK import failed: {e}")
     logging.error("Install with: pip install msgraph-sdk==1.5.4 azure-identity==1.19.0")
+
+# Import business hours validator
+try:
+    from business_hours_validator import business_hours
+    BUSINESS_HOURS_AVAILABLE = True
+    logging.info("✅ Business Hours Validator imported successfully")
+except ImportError as e:
+    BUSINESS_HOURS_AVAILABLE = False
+    logging.error(f"❌ Business Hours Validator import failed: {e}")
 
 logger = logging.getLogger("microsoft_graph_client")
 
@@ -100,49 +110,138 @@ class MicrosoftGraphClient:
             return self._get_mock_availability()
     
     def _calculate_available_slots(self, events: List[Any], start_date: datetime, end_date: datetime) -> List[Dict[str, Any]]:
-        """Calculate available time slots based on existing events"""
+        """Calculate available time slots based on existing events using business hours validator"""
         available_slots = []
         
-        # Business hours: 9 AM to 5 PM, weekdays only
-        business_hours = [10, 14, 15, 16]  # 10 AM, 2 PM, 3 PM, 4 PM
-        
-        current_date = start_date.date()
-        end_date_only = end_date.date()
-        
-        while current_date <= end_date_only and len(available_slots) < 4:
-            # Skip weekends
-            if current_date.weekday() < 5:  # Monday = 0, Friday = 4
+        if BUSINESS_HOURS_AVAILABLE:
+            # Use enhanced business hours validator (8AM-4PM, 30min slots)
+            next_slots = business_hours.get_next_available_slots(days_ahead=7, max_slots=6)
+            
+            for slot in next_slots:
+                # Check if this slot conflicts with existing events
+                slot_end = slot.date + timedelta(minutes=30)
+                is_available = True
                 
-                for hour in business_hours:
-                    slot_datetime = datetime.combine(current_date, datetime.min.time().replace(hour=hour))
-                    
-                    # Check if this slot conflicts with existing events
-                    slot_end = slot_datetime + timedelta(hours=1)
-                    is_available = True
-                    
-                    for event in events:
+                for event in events:
+                    try:
                         event_start = datetime.fromisoformat(event.start.date_time.replace('Z', '+00:00'))
                         event_end = datetime.fromisoformat(event.end.date_time.replace('Z', '+00:00'))
                         
                         # Check for overlap
-                        if not (slot_end <= event_start or slot_datetime >= event_end):
+                        if not (slot_end <= event_start or slot.date >= event_end):
                             is_available = False
                             break
-                    
-                    if is_available:
-                        available_slots.append({
-                            "date": slot_datetime.strftime("%Y-%m-%d"),
-                            "time": slot_datetime.strftime("%I:%M %p"),
-                            "day_name": slot_datetime.strftime("%A"),
-                            "formatted": f"{slot_datetime.strftime('%A, %B %d')} at {slot_datetime.strftime('%I:%M %p')}"
-                        })
-                        
-                        if len(available_slots) >= 4:
-                            break
+                    except Exception as e:
+                        logger.warning(f"Error parsing event time: {e}")
+                        continue
+                
+                if is_available:
+                    available_slots.append({
+                        "date": slot.date.strftime("%Y-%m-%d"),
+                        "time": slot.date.strftime("%I:%M %p"),
+                        "day_name": slot.date.strftime("%A"),
+                        "formatted": slot.formatted
+                    })
             
-            current_date += timedelta(days=1)
-        
-        return available_slots
+            return available_slots[:4]  # Return max 4 slots for compatibility
+        else:
+            # Fallback to original logic if business hours validator not available
+            business_hours_fallback = [10, 14, 15, 16]  # 10 AM, 2 PM, 3 PM, 4 PM
+            
+            current_date = start_date.date()
+            end_date_only = end_date.date()
+            
+            while current_date <= end_date_only and len(available_slots) < 4:
+                # Skip weekends
+                if current_date.weekday() < 5:  # Monday = 0, Friday = 4
+                    
+                    for hour in business_hours_fallback:
+                        slot_datetime = datetime.combine(current_date, datetime.min.time().replace(hour=hour))
+                        
+                        # Check if this slot conflicts with existing events
+                        slot_end = slot_datetime + timedelta(hours=1)
+                        is_available = True
+                        
+                        for event in events:
+                            try:
+                                event_start = datetime.fromisoformat(event.start.date_time.replace('Z', '+00:00'))
+                                event_end = datetime.fromisoformat(event.end.date_time.replace('Z', '+00:00'))
+                                
+                                # Check for overlap
+                                if not (slot_end <= event_start or slot_datetime >= event_end):
+                                    is_available = False
+                                    break
+                            except Exception as e:
+                                logger.warning(f"Error parsing event time: {e}")
+                                continue
+                        
+                        if is_available:
+                            available_slots.append({
+                                "date": slot_datetime.strftime("%Y-%m-%d"),
+                                "time": slot_datetime.strftime("%I:%M %p"),
+                                "day_name": slot_datetime.strftime("%A"),
+                                "formatted": f"{slot_datetime.strftime('%A, %B %d')} at {slot_datetime.strftime('%I:%M %p')}"
+                            })
+                            
+                            if len(available_slots) >= 4:
+                                break
+                
+                current_date += timedelta(days=1)
+            
+            return available_slots
+    
+    def validate_client_request(self, requested_date: str, requested_time: str) -> Dict[str, Any]:
+        """Validate a client's requested date and time"""
+        if BUSINESS_HOURS_AVAILABLE:
+            return business_hours.validate_requested_datetime(requested_date, requested_time)
+        else:
+            # Basic validation fallback
+            try:
+                from datetime import datetime
+                parsed_date = datetime.strptime(requested_date, "%Y-%m-%d")
+                parsed_time = datetime.strptime(requested_time, "%H:%M").time()
+                
+                # Basic weekday check
+                if parsed_date.weekday() >= 5:
+                    return {
+                        "valid": False,
+                        "reason": "weekend",
+                        "message": "No trabajamos fines de semana"
+                    }
+                
+                return {
+                    "valid": True,
+                    "datetime": datetime.combine(parsed_date.date(), parsed_time),
+                    "formatted_date": parsed_date.strftime("%A, %d de %B"),
+                    "formatted_time": parsed_time.strftime("%I:%M %p")
+                }
+            except Exception as e:
+                return {
+                    "valid": False,
+                    "reason": "format_error",
+                    "message": "Formato de fecha/hora inválido"
+                }
+    
+    def get_same_day_alternatives(self, requested_date: str, exclude_times: List[str] = None) -> List[Dict[str, Any]]:
+        """Get alternative time slots for the same day"""
+        if BUSINESS_HOURS_AVAILABLE:
+            try:
+                from datetime import datetime
+                parsed_date = datetime.strptime(requested_date, "%Y-%m-%d")
+                alternatives = business_hours.get_same_day_alternatives(parsed_date, exclude_times or [])
+                
+                return [{
+                    "date": alt.date.strftime("%Y-%m-%d"),
+                    "time": alt.date.strftime("%I:%M %p"),
+                    "day_name": alt.date.strftime("%A"),
+                    "formatted": alt.formatted
+                } for alt in alternatives]
+            except Exception as e:
+                logger.error(f"Error getting same day alternatives: {e}")
+                return []
+        else:
+            # Fallback: return some basic alternatives
+            return []
     
     def _get_mock_availability(self) -> List[Dict[str, Any]]:
         """Generate mock availability when Graph API is not available"""

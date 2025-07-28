@@ -11,6 +11,15 @@ from microsoft_graph_client import graph_client
 from chatwoot_summary_integration import send_bot_summary_to_chatwoot
 from whatsapp_client import ChatwootWhatsAppClient
 
+# Import business hours validator
+try:
+    from business_hours_validator import business_hours
+    BUSINESS_HOURS_AVAILABLE = True
+    logger.info("✅ Business Hours Validator imported successfully")
+except ImportError as e:
+    BUSINESS_HOURS_AVAILABLE = False
+    logger.error(f"❌ Business Hours Validator import failed: {e}")
+
 logger = logging.getLogger("whatsapp-bot")
 
 class TDXWhatsAppBot:
@@ -270,6 +279,27 @@ SÉ SÚPER EMPÁTICO Y BREVE. Máximo 10-12 palabras por respuesta. Ve DIRECTO A
             {
                 "type": "function",
                 "function": {
+                    "name": "validate_client_datetime_request",
+                    "description": "NUEVA: Validar solicitud específica de fecha/hora del cliente y ofrecer alternativas si no está disponible",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "requested_date": {
+                                "type": "string",
+                                "description": "Fecha solicitada por el cliente (formato YYYY-MM-DD, DD/MM/YYYY o DD-MM-YYYY)"
+                            },
+                            "requested_time": {
+                                "type": "string", 
+                                "description": "Hora solicitada por el cliente (formato HH:MM o HH:MM AM/PM)"
+                            }
+                        },
+                        "required": ["requested_date", "requested_time"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
                     "name": "respond_to_question",
                     "description": "OBLIGATORIO: Responder preguntas específicas sobre servicios TDX de forma empática y personalizada. Usar cuando cliente pregunta '\u00bfes posible?', '\u00bfcómo funciona?', etc.",
                     "parameters": {
@@ -487,7 +517,12 @@ SÉ SÚPER EMPÁTICO Y BREVE. Máximo 10-12 palabras por respuesta. Ve DIRECTO A
         
         try:
             # Nuevas herramientas para leads fríos con empatía mejorada
-            if function_name == "respond_to_question":
+            if function_name == "validate_client_datetime_request":
+                return await self.validate_client_datetime_request(
+                    function_args.get("requested_date"),
+                    function_args.get("requested_time")
+                )
+            elif function_name == "respond_to_question":
                 return await self.respond_to_question(
                     function_args.get("question_type"),
                     function_args.get("service_mentioned"),
@@ -909,9 +944,68 @@ Perfecto, ahora puedo enviarte la invitación de la reunión.
             logger.error(f"Error collecting contact data: {e}")
             return "Listo. ¿Cuándo te conviene?"
     
-    async def schedule_consultation(self, date: str, time: str, meeting_type: str) -> str:
-        """Tool: Agendar reunión consultiva"""
+    async def validate_client_datetime_request(self, requested_date: str, requested_time: str) -> str:
+        """Nueva función: Validar solicitud específica del cliente"""
         try:
+            # Usar validador de horarios de negocio si está disponible
+            if BUSINESS_HOURS_AVAILABLE:
+                validation = business_hours.validate_requested_datetime(requested_date, requested_time)
+                
+                if not validation['valid']:
+                    reason = validation['reason']
+                    message = validation['message']
+                    
+                    # Ofrecer alternativas basadas en el motivo de rechazo
+                    if reason == 'not_business_day':
+                        # Obtener alternativas para el próximo día hábil
+                        alternatives = business_hours.get_next_available_slots(days_ahead=5, max_slots=3)
+                        alt_msg = business_hours.format_slots_for_whatsapp(alternatives)
+                        return f"❌ {message}\n\n{alt_msg}"
+                    
+                    elif reason == 'outside_business_hours':
+                        # Obtener alternativas para el mismo día
+                        try:
+                            from datetime import datetime
+                            parsed_date = datetime.strptime(requested_date, "%Y-%m-%d")
+                            same_day_alternatives = business_hours.get_same_day_alternatives(parsed_date)
+                            
+                            if same_day_alternatives:
+                                alt_msg = business_hours.format_slots_for_whatsapp(same_day_alternatives)
+                                return f"❌ {message}\n\n📅 *Alternativas para el mismo día:*\n{alt_msg}"
+                            else:
+                                # No hay alternativas el mismo día, ofrecer próximos días
+                                alternatives = business_hours.get_next_available_slots(days_ahead=5, max_slots=3)
+                                alt_msg = business_hours.format_slots_for_whatsapp(alternatives)
+                                return f"❌ {message}\n\n{alt_msg}"
+                        except:
+                            return f"❌ {message}\n\n{business_hours.get_business_hours_info()}"
+                    
+                    else:
+                        return f"❌ {message}\n\n{business_hours.get_business_hours_info()}"
+                
+                else:
+                    # La solicitud es válida
+                    formatted_date = validation['formatted_date']
+                    formatted_time = validation['formatted_time']
+                    return f"✅ Perfecto! {formatted_date} a las {formatted_time} está disponible.\n\n¿Confirmamos esta fecha y hora?"
+            
+            else:
+                # Fallback básico si el validador no está disponible
+                return f"Revisando disponibilidad para {requested_date} a las {requested_time}..."
+                
+        except Exception as e:
+            logger.error(f"Error validating client datetime request: {e}")
+            return "❌ Formato de fecha/hora inválido. Usa formato: DD/MM/YYYY HH:MM\n\nEjemplo: 15/03/2024 10:30"
+
+    async def schedule_consultation(self, date: str, time: str, meeting_type: str) -> str:
+        """Tool: Agendar reunión consultiva con validación mejorada"""
+        try:
+            # Validar fecha y hora antes de proceder
+            if BUSINESS_HOURS_AVAILABLE:
+                validation = business_hours.validate_requested_datetime(date, time)
+                if not validation['valid']:
+                    return f"❌ {validation['message']}\n\nPor favor, elige una fecha y hora dentro del horario laboral (8AM-4PM, lunes a viernes)."
+            
             final_email = self.prospect_info.get('email')
             full_name = self.prospect_info.get('full_name', self.contact_name)
             

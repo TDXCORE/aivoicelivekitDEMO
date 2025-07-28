@@ -124,6 +124,20 @@ async def chatwoot_webhook(request: Request, token: str):
         logger.info(f"Processing contact: {contact_data.get('name')} ({contact_data.get('phone')})")
         logger.info(f"Has email: {contact_data.get('has_email')}")
         
+        # 🚀 NUEVA FUNCIONALIDAD: Enviar mensaje proactivo de WhatsApp INMEDIATAMENTE
+        # Se ejecuta en paralelo con la llamada de voz para máxima eficiencia
+        proactive_whatsapp_task = None
+        if WHATSAPP_ENABLED:
+            logger.info("🚀 Initiating proactive WhatsApp message...")
+            try:
+                # Ejecutar mensaje proactivo de forma asíncrona (no bloqueante)
+                proactive_whatsapp_task = asyncio.create_task(
+                    send_proactive_whatsapp_message(contact_data)
+                )
+                logger.info("✅ Proactive WhatsApp message task created successfully")
+            except Exception as e:
+                logger.error(f"❌ Error creating proactive WhatsApp task: {e}")
+        
         # Crear llamada saliente - elegir sistema basado en feature flag
         if USE_TELNYX:
             logger.info("Using Telnyx for outbound call")
@@ -132,12 +146,29 @@ async def chatwoot_webhook(request: Request, token: str):
             logger.info("Using LiveKit for outbound call (legacy)")
             asyncio.create_task(create_outbound_call_from_webhook(contact_data))
         
+        # Esperar resultado del mensaje proactivo de WhatsApp si está habilitado
+        proactive_whatsapp_result = None
+        if proactive_whatsapp_task:
+            try:
+                # Esperar máximo 5 segundos por el resultado del mensaje proactivo
+                proactive_whatsapp_result = await asyncio.wait_for(
+                    proactive_whatsapp_task, timeout=5.0
+                )
+                logger.info(f"📱 Proactive WhatsApp result: {proactive_whatsapp_result.get('status')}")
+            except asyncio.TimeoutError:
+                logger.warning("⏰ Proactive WhatsApp message timeout (5s) - continuing with call")
+                proactive_whatsapp_result = {"status": "timeout"}
+            except Exception as e:
+                logger.error(f"❌ Error waiting for proactive WhatsApp result: {e}")
+                proactive_whatsapp_result = {"status": "error", "error": str(e)}
+        
         return {
             "status": "call_queued",
             "contact_id": contact_data.get("id"),
             "contact_name": contact_data.get("name"),
             "phone": contact_data.get("phone"),
             "has_email": contact_data.get("has_email"),
+            "proactive_whatsapp": proactive_whatsapp_result,
             "timestamp": datetime.now().isoformat()
         }
         
@@ -166,6 +197,7 @@ def extract_contact_data(payload: Dict[str, Any]) -> Dict[str, Any]:
         "custom_attributes": custom_attributes,
         "has_email": bool(payload.get("email")),
         "source": custom_attributes.get("source"),
+        "company_name": custom_attributes.get("company_name", ""),
         "account_id": payload.get("account", {}).get("id") if payload.get("account") else None
     }
     
@@ -252,6 +284,59 @@ async def schedule_whatsapp_fallback(contact_data: Dict[str, Any], call_control_
         
     except Exception as e:
         logger.error(f"Error in WhatsApp fallback scheduling: {e}")
+
+async def send_proactive_whatsapp_message(contact_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    NUEVA FUNCIÓN: Enviar mensaje proactivo de WhatsApp inmediatamente cuando se recibe contact_created
+    Esta función se ejecuta en paralelo con la llamada de voz
+    """
+    if not WHATSAPP_ENABLED:
+        logger.warning("WhatsApp proactive messaging not available - service disabled")
+        return {"status": "whatsapp_disabled"}
+    
+    try:
+        phone = contact_data.get("phone")
+        contact_name = contact_data.get("name", "")
+        
+        if not phone:
+            logger.warning("No phone number available for proactive WhatsApp message")
+            return {"status": "no_phone_number"}
+        
+        logger.info(f"🚀 Sending proactive WhatsApp message to {contact_name} ({phone})")
+        
+        # Importar WhatsApp client
+        from whatsapp_client import ChatwootWhatsAppClient
+        whatsapp_client = ChatwootWhatsAppClient()
+        
+        # Enviar mensaje proactivo personalizado
+        success = await whatsapp_client.send_proactive_greeting_message(
+            phone_number=phone,
+            contact_name=contact_name,
+            contact_data=contact_data
+        )
+        
+        if success:
+            logger.info(f"✅ Proactive WhatsApp message sent successfully to {phone}")
+            return {
+                "status": "proactive_message_sent",
+                "phone": phone,
+                "contact_name": contact_name,
+                "source": contact_data.get("source", "manual")
+            }
+        else:
+            logger.error(f"❌ Failed to send proactive WhatsApp message to {phone}")
+            return {
+                "status": "proactive_message_failed",
+                "phone": phone,
+                "error": "Message sending failed"
+            }
+            
+    except Exception as e:
+        logger.error(f"❌ Error sending proactive WhatsApp message: {e}")
+        return {
+            "status": "proactive_message_error",
+            "error": str(e)
+        }
 
 async def trigger_whatsapp_fallback(contact_data: Dict[str, Any], reason: str):
     """
