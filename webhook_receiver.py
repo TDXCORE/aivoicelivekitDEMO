@@ -72,6 +72,14 @@ async def health_check():
             "whatsapp_fallback_enabled": WHATSAPP_FALLBACK_ENABLED,
             "call_timeout_seconds": CALL_TIMEOUT_SECONDS
         },
+        "environment_config": {
+            "chatwoot_account_id": os.getenv('VITE_CHATWOOT_ACCOUNT_ID', 'NOT_SET'),
+            "chatwoot_api_token": bool(os.getenv('VITE_CHATWOOT_API_TOKEN')),
+            "whatsapp_inbox_id": os.getenv('CHATWOOT_WHATSAPP_INBOX_ID', 'NOT_SET'),
+            "whatsapp_bot_enabled": os.getenv('WHATSAPP_BOT_ENABLED', 'NOT_SET'),
+            "bot_agent_id": os.getenv('CHATWOOT_BOT_AGENT_ID', 'NOT_SET'),
+            "telnyx_outbound_number": bool(os.getenv('TELNYX_OUTBOUND_NUMBER'))
+        },
         "fallback_config": {
             "chatwoot_account_id": bool(os.getenv('VITE_CHATWOOT_ACCOUNT_ID')),
             "chatwoot_api_token": bool(os.getenv('VITE_CHATWOOT_API_TOKEN')),
@@ -100,19 +108,21 @@ async def chatwoot_webhook(request: Request, token: str):
         
         # Obtener payload del webhook
         payload = await request.json()
-        logger.info(f"Received webhook: {payload.get('event', 'unknown_event')}")
+        logger.info(f"🔍 WEBHOOK DEBUG - Received webhook: {payload.get('event', 'unknown_event')}")
+        logger.info(f"🔍 WEBHOOK DEBUG - Full payload keys: {list(payload.keys())}")
         
         # Validar que sea evento contact_created
         if payload.get("event") != "contact_created":
-            logger.info(f"Ignoring non-contact_created event: {payload.get('event')}")
+            logger.info(f"❌ Ignoring non-contact_created event: {payload.get('event')}")
             return {"status": "ignored", "reason": "not contact_created event"}
         
         # Extraer datos del contacto
         contact_data = extract_contact_data(payload)
+        logger.info(f"🔍 CONTACT DEBUG - Extracted contact_data: {contact_data}")
         
         # Validar que venga de landing_page
         if not is_from_landing_page(contact_data):
-            logger.info(f"Ignoring contact not from landing_page: {contact_data.get('source')}")
+            logger.info(f"❌ Ignoring contact not from landing_page. Source: '{contact_data.get('source')}', Custom attributes: {contact_data.get('custom_attributes')}")
             return {"status": "ignored", "reason": "not from landing_page"}
         
         # Validar que tenga teléfono
@@ -127,8 +137,10 @@ async def chatwoot_webhook(request: Request, token: str):
         # 🚀 NUEVA FUNCIONALIDAD: Enviar mensaje proactivo de WhatsApp INMEDIATAMENTE
         # Se ejecuta en paralelo con la llamada de voz para máxima eficiencia
         proactive_whatsapp_task = None
+        logger.info(f"🔍 WHATSAPP DEBUG - WHATSAPP_ENABLED: {WHATSAPP_ENABLED}")
         if WHATSAPP_ENABLED:
             logger.info("🚀 Initiating proactive WhatsApp message...")
+            logger.info(f"🚀 Contact data for WhatsApp: Phone={contact_data.get('phone')}, Name={contact_data.get('name')}")
             try:
                 # Ejecutar mensaje proactivo de forma asíncrona (no bloqueante)
                 proactive_whatsapp_task = asyncio.create_task(
@@ -137,6 +149,10 @@ async def chatwoot_webhook(request: Request, token: str):
                 logger.info("✅ Proactive WhatsApp message task created successfully")
             except Exception as e:
                 logger.error(f"❌ Error creating proactive WhatsApp task: {e}")
+                import traceback
+                logger.error(f"❌ Traceback: {traceback.format_exc()}")
+        else:
+            logger.warning("⚠️ WhatsApp proactive messaging is DISABLED - check WHATSAPP_BOT_ENABLED environment variable")
         
         # Crear llamada saliente - elegir sistema basado en feature flag
         if USE_TELNYX:
@@ -290,16 +306,20 @@ async def send_proactive_whatsapp_message(contact_data: Dict[str, Any]) -> Dict[
     NUEVA FUNCIÓN: Enviar mensaje proactivo de WhatsApp inmediatamente cuando se recibe contact_created
     Esta función se ejecuta en paralelo con la llamada de voz
     """
+    logger.info(f"🔍 PROACTIVE DEBUG - Function called with contact_data: {contact_data}")
+    
     if not WHATSAPP_ENABLED:
-        logger.warning("WhatsApp proactive messaging not available - service disabled")
+        logger.warning("❌ WhatsApp proactive messaging not available - service disabled")
         return {"status": "whatsapp_disabled"}
     
     try:
         phone = contact_data.get("phone")
         contact_name = contact_data.get("name", "")
         
+        logger.info(f"🔍 PROACTIVE DEBUG - Phone: {phone}, Name: {contact_name}")
+        
         if not phone:
-            logger.warning("No phone number available for proactive WhatsApp message")
+            logger.warning("❌ No phone number available for proactive WhatsApp message")
             return {"status": "no_phone_number"}
         
         logger.info(f"🚀 Sending proactive WhatsApp message to {contact_name} ({phone})")

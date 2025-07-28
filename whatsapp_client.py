@@ -485,11 +485,20 @@ class ChatwootWhatsAppClient:
     async def send_proactive_greeting_message(self, phone_number: str, contact_name: str, contact_data: Dict[str, Any]) -> bool:
         """Enviar mensaje de saludo proactivo personalizado"""
         try:
+            logger.info(f"🔍 CLIENT DEBUG - send_proactive_greeting_message called")
+            logger.info(f"🔍 CLIENT DEBUG - Phone: {phone_number}, Name: {contact_name}")
+            logger.info(f"🔍 CLIENT DEBUG - Contact data: {contact_data}")
+            
+            # Verificar configuración
+            logger.info(f"🔍 CLIENT DEBUG - Account ID: {self.account_id}")
+            logger.info(f"🔍 CLIENT DEBUG - API Token configured: {bool(self.api_token)}")
+            logger.info(f"🔍 CLIENT DEBUG - WhatsApp Inbox ID: {os.getenv('CHATWOOT_WHATSAPP_INBOX_ID')}")
+            
             # 1. Encontrar o crear conversación
             conversation_info = await self.find_or_create_whatsapp_conversation(phone_number, contact_name)
             
             if not conversation_info:
-                logger.error(f"Could not create/find conversation for {phone_number}")
+                logger.error(f"❌ Could not create/find conversation for {phone_number}")
                 return False
             
             conversation_id = conversation_info['conversation_id']
