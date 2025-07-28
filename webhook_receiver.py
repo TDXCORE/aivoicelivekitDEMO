@@ -31,6 +31,10 @@ load_dotenv(dotenv_path=".env.local")
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("chatwoot_webhook")
 
+# Feature flag para crear conversaciones automáticas en Chatwoot
+CREATE_WEBHOOK_CONVERSATIONS = os.getenv("CREATE_WEBHOOK_CONVERSATIONS_ENABLED", "true").lower() == "true"
+logger.info(f"Webhook conversations creation enabled: {CREATE_WEBHOOK_CONVERSATIONS}")
+
 # Crear app FastAPI
 app = FastAPI(
     title="Chatwoot Webhook Receiver",
@@ -70,12 +74,14 @@ async def health_check():
             "telnyx_enabled": USE_TELNYX,
             "whatsapp_enabled": WHATSAPP_ENABLED,
             "whatsapp_fallback_enabled": WHATSAPP_FALLBACK_ENABLED,
+            "webhook_conversations_enabled": CREATE_WEBHOOK_CONVERSATIONS,
             "call_timeout_seconds": CALL_TIMEOUT_SECONDS
         },
         "environment_config": {
             "chatwoot_account_id": os.getenv('VITE_CHATWOOT_ACCOUNT_ID', 'NOT_SET'),
             "chatwoot_api_token": bool(os.getenv('VITE_CHATWOOT_API_TOKEN')),
             "whatsapp_inbox_id": os.getenv('CHATWOOT_WHATSAPP_INBOX_ID', 'NOT_SET'),
+            "webhook_inbox_id": os.getenv('CHATWOOT_WEBHOOK_INBOX_ID', 'NOT_SET'),
             "whatsapp_bot_enabled": os.getenv('WHATSAPP_BOT_ENABLED', 'NOT_SET'),
             "bot_agent_id": os.getenv('CHATWOOT_BOT_AGENT_ID', 'NOT_SET'),
             "telnyx_outbound_number": bool(os.getenv('TELNYX_OUTBOUND_NUMBER'))
@@ -154,6 +160,22 @@ async def chatwoot_webhook(request: Request, token: str):
         else:
             logger.warning("⚠️ WhatsApp proactive messaging is DISABLED - check WHATSAPP_BOT_ENABLED environment variable")
         
+        # 🆕 NUEVA FUNCIONALIDAD: Crear conversación automática en Chatwoot
+        webhook_conversation_task = None
+        if CREATE_WEBHOOK_CONVERSATIONS:
+            logger.info("🆕 Iniciando creación de conversación automática en Chatwoot...")
+            try:
+                webhook_conversation_task = asyncio.create_task(
+                    create_chatwoot_conversation_for_webhook(contact_data)
+                )
+                logger.info("✅ Tarea de conversación Chatwoot creada exitosamente")
+            except Exception as e:
+                logger.error(f"❌ Error creando tarea de conversación Chatwoot: {e}")
+                import traceback
+                logger.error(f"❌ Traceback: {traceback.format_exc()}")
+        else:
+            logger.info("⚠️ Creación de conversaciones Chatwoot está DESHABILITADA")
+
         # Crear llamada saliente - elegir sistema basado en feature flag
         if USE_TELNYX:
             logger.info("Using Telnyx for outbound call")
@@ -178,6 +200,22 @@ async def chatwoot_webhook(request: Request, token: str):
                 logger.error(f"❌ Error waiting for proactive WhatsApp result: {e}")
                 proactive_whatsapp_result = {"status": "error", "error": str(e)}
         
+        # Esperar resultado de la conversación Chatwoot si está habilitada
+        webhook_conversation_result = None
+        if webhook_conversation_task:
+            try:
+                # Esperar máximo 3 segundos por el resultado de la conversación
+                webhook_conversation_result = await asyncio.wait_for(
+                    webhook_conversation_task, timeout=3.0
+                )
+                logger.info(f"🆕 Chatwoot conversation result: {webhook_conversation_result.get('success')}")
+            except asyncio.TimeoutError:
+                logger.warning("⏰ Chatwoot conversation timeout (3s) - continuing")
+                webhook_conversation_result = {"success": False, "error": "timeout"}
+            except Exception as e:
+                logger.error(f"❌ Error waiting for Chatwoot conversation result: {e}")
+                webhook_conversation_result = {"success": False, "error": str(e)}
+        
         return {
             "status": "call_queued",
             "contact_id": contact_data.get("id"),
@@ -185,6 +223,7 @@ async def chatwoot_webhook(request: Request, token: str):
             "phone": contact_data.get("phone"),
             "has_email": contact_data.get("has_email"),
             "proactive_whatsapp": proactive_whatsapp_result,
+            "chatwoot_conversation": webhook_conversation_result,
             "timestamp": datetime.now().isoformat()
         }
         
@@ -427,6 +466,55 @@ Soy Mati, asistente virtual de TDX. Vi que te registraste mostrando interés en 
     except Exception as e:
         logger.error(f"Error triggering WhatsApp fallback: {e}")
         return {"status": "fallback_error", "error": str(e)}
+
+async def create_chatwoot_conversation_for_webhook(contact_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    🆕 NUEVA FUNCIÓN: Crear conversación automática en Chatwoot para contacto de webhook
+    """
+    try:
+        logger.info(f"🆕 Creando conversación automática para contacto: {contact_data.get('name')} (ID: {contact_data.get('id')})")
+        
+        # Importar y usar la integración mejorada de Chatwoot
+        from chatwoot_summary_integration import ChatwootSummaryIntegration
+        
+        # Obtener inbox ID específico para webhooks (watdxv3)
+        webhook_inbox_id = os.getenv('CHATWOOT_WEBHOOK_INBOX_ID')
+        if not webhook_inbox_id:
+            logger.warning("CHATWOOT_WEBHOOK_INBOX_ID no configurado, usando inbox por defecto")
+            webhook_inbox_id = None
+        
+        # Crear instancia de integración con inbox específico
+        chatwoot_integration = ChatwootSummaryIntegration(inbox_id=webhook_inbox_id)
+        
+        # Crear conversación con reintentos automáticos
+        result = chatwoot_integration.create_webhook_conversation_with_retry(contact_data)
+        
+        if result.get("success"):
+            logger.info(f"✅ Conversación automática creada: ID {result.get('conversation_id')}")
+            return {
+                "success": True,
+                "conversation_id": result.get("conversation_id"),
+                "inbox_id": result.get("inbox_id"),
+                "contact_id": result.get("contact_id"),
+                "source": "webhook_automation"
+            }
+        else:
+            logger.error(f"❌ Error creando conversación automática: {result.get('error')}")
+            return {
+                "success": False,
+                "error": result.get("error"),
+                "details": result.get("details", "Unknown error")
+            }
+            
+    except Exception as e:
+        logger.error(f"❌ Error en create_chatwoot_conversation_for_webhook: {e}")
+        import traceback
+        logger.error(f"❌ Traceback: {traceback.format_exc()}")
+        return {
+            "success": False,
+            "error": str(e),
+            "source": "webhook_automation_exception"
+        }
 
 async def create_chatwoot_whatsapp_conversation(phone: str, contact_data: Dict[str, Any], message: str):
     """

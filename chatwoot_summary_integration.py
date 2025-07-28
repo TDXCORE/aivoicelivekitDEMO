@@ -16,10 +16,13 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class ChatwootSummaryIntegration:
-    def __init__(self):
+    def __init__(self, inbox_id=None):
         self.account_id = os.getenv('VITE_CHATWOOT_ACCOUNT_ID', '126521')
         self.api_token = os.getenv('VITE_CHATWOOT_API_TOKEN', 'PNwLGXoDiJ22QKd4AzX9Xxof')
-        self.inbox_id = os.getenv('VITE_CHATWOOT_INBOX_ID', '69704')  # ID numérico, no identifier
+        # Permitir override del inbox_id para diferentes casos de uso
+        self.inbox_id = inbox_id or os.getenv('VITE_CHATWOOT_INBOX_ID', '69704')  # ID numérico, no identifier
+        # Configuración específica para webhook conversations
+        self.webhook_inbox_id = os.getenv('CHATWOOT_WEBHOOK_INBOX_ID', self.inbox_id)
         self.base_url = "https://app.chatwoot.com/api/v1"
         
         self.headers = {
@@ -618,6 +621,186 @@ class ChatwootSummaryIntegration:
         except Exception as e:
             logger.error(f"Error en send_conversation_summary: {str(e)}")
             return False
+
+    def format_webhook_contact_message(self, contact_data: Dict[str, Any]) -> str:
+        """
+        Crear mensaje inicial para contacto recibido por webhook
+        """
+        try:
+            contact_name = contact_data.get('name', 'Cliente')
+            phone = contact_data.get('phone', 'N/A')
+            email = contact_data.get('email', 'No disponible')
+            company_name = contact_data.get('company_name', 'No especificada')
+            source = contact_data.get('source', 'webhook').replace('_', ' ').title()
+            timestamp = datetime.now().strftime('%d/%m/%Y %H:%M')
+            
+            message = f"""🎯 **NUEVO CONTACTO - {source.upper()}**
+
+📊 **INFORMACIÓN DEL CONTACTO**
+• **Nombre:** {contact_name}
+• **Teléfono:** {phone}
+• **Email:** {email}
+• **Empresa:** {company_name}
+• **Fuente:** {source}
+• **Recibido:** {timestamp}
+
+🚀 **ACCIONES AUTOMÁTICAS INICIADAS**
+• ✅ Llamada de voz programada con bot Mati
+• ✅ Mensaje proactivo de WhatsApp enviado
+• ✅ Conversación creada automáticamente en Chatwoot
+
+📱 **ESTADO DEL PROCESO**
+• **Bot de voz:** Intentando contactar al cliente
+• **Fallback:** WhatsApp automático si no responde llamada
+• **Seguimiento:** Requerido por equipo de ventas
+
+💡 **PRÓXIMOS PASOS RECOMENDADOS**
+• Monitorear respuesta del cliente en WhatsApp
+• Preparar información adicional según interés mostrado
+• Asignar agente humano si el bot requiere transferencia
+
+---
+📅 **Generado automáticamente:** {timestamp}
+🤖 **Por:** Sistema de Webhook TDX"""
+
+            return message
+            
+        except Exception as e:
+            logger.error(f"Error formateando mensaje de webhook: {str(e)}")
+            return f"Nuevo contacto recibido: {contact_data.get('name', 'N/A')} - {contact_data.get('phone', 'N/A')}"
+
+    def create_conversation_for_webhook_contact(self, contact_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Crear conversación en Chatwoot para contacto recibido por webhook
+        Usa el inbox específico configurado para webhooks
+        """
+        try:
+            contact_id = contact_data.get('id')
+            if not contact_id:
+                logger.error("No se encontró ID del contacto en webhook data")
+                return {"success": False, "error": "missing_contact_id"}
+
+            logger.info(f"Creando conversación para contacto webhook: {contact_id}")
+            
+            # Usar inbox específico para webhooks
+            target_inbox_id = self.webhook_inbox_id
+            logger.info(f"Usando inbox {target_inbox_id} para conversación de webhook")
+            
+            # 1. Verificar/crear asociación contact-inbox
+            source_id = self.get_contact_inbox_source_id_for_inbox(contact_id, target_inbox_id)
+            
+            if not source_id:
+                logger.warning(f"No se pudo obtener source_id para contacto {contact_id} en inbox {target_inbox_id}")
+                # Crear source_id temporal para API channels
+                source_id = f"webhook-{contact_id}-{int(datetime.now().timestamp())}"
+                logger.info(f"Usando source_id temporal: {source_id}")
+            
+            # 2. Crear conversación
+            conversation_payload = {
+                'source_id': source_id,
+                'inbox_id': int(target_inbox_id),
+                'contact_id': contact_id,
+                'status': 'open',  # Mantener abierta para seguimiento
+                'message': {
+                    'content': self.format_webhook_contact_message(contact_data),
+                    'message_type': 'outgoing',
+                    'private': False
+                }
+            }
+            
+            conv_url = f"{self.base_url}/accounts/{self.account_id}/conversations"
+            logger.info(f"Creando conversación webhook con payload: {conversation_payload}")
+            
+            response = requests.post(conv_url, headers=self.headers, json=conversation_payload)
+            
+            if response.status_code in [200, 201]:
+                conversation = response.json()
+                conversation_id = conversation.get('id')
+                logger.info(f"✅ Conversación webhook creada exitosamente: ID {conversation_id}")
+                
+                return {
+                    "success": True,
+                    "conversation_id": conversation_id,
+                    "contact_id": contact_id,
+                    "inbox_id": target_inbox_id,
+                    "source_id": source_id
+                }
+            else:
+                logger.error(f"Error creando conversación webhook: {response.status_code} - {response.text}")
+                return {
+                    "success": False,
+                    "error": f"api_error_{response.status_code}",
+                    "details": response.text
+                }
+                
+        except Exception as e:
+            logger.error(f"Error en create_conversation_for_webhook_contact: {str(e)}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
+    def get_contact_inbox_source_id_for_inbox(self, contact_id: int, specific_inbox_id: str) -> Optional[str]:
+        """
+        Obtiene el source_id del contact_inbox para un inbox específico
+        """
+        try:
+            url = f"{self.base_url}/accounts/{self.account_id}/contacts/{contact_id}/contactable_inboxes"
+            response = requests.get(url, headers=self.headers)
+            
+            if response.status_code == 200:
+                inboxes = response.json().get('payload', [])
+                
+                # Buscar el inbox específico
+                for inbox in inboxes:
+                    if str(inbox.get('inbox_id')) == str(specific_inbox_id):
+                        source_id = inbox.get('source_id')
+                        if source_id:
+                            logger.info(f"✅ Source ID encontrado para inbox {specific_inbox_id}: {source_id}")
+                            return source_id
+                
+                logger.warning(f"No se encontró source_id para inbox {specific_inbox_id} en contacto {contact_id}")
+                return None
+                
+            else:
+                logger.error(f"Error obteniendo contactable inboxes: {response.status_code} - {response.text}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error en get_contact_inbox_source_id_for_inbox: {str(e)}")
+            return None
+
+    def create_webhook_conversation_with_retry(self, contact_data: Dict[str, Any], max_retries: int = 3) -> Dict[str, Any]:
+        """
+        Crear conversación para webhook con reintentos automáticos
+        """
+        for attempt in range(max_retries):
+            try:
+                logger.info(f"Intento {attempt + 1}/{max_retries} de crear conversación webhook")
+                
+                result = self.create_conversation_for_webhook_contact(contact_data)
+                
+                if result.get("success"):
+                    logger.info(f"✅ Conversación webhook creada exitosamente en intento {attempt + 1}")
+                    return result
+                
+                # Esperar antes del siguiente intento
+                if attempt < max_retries - 1:
+                    wait_time = (attempt + 1) * 2  # Backoff exponencial
+                    logger.info(f"Esperando {wait_time}s antes del siguiente intento...")
+                    time.sleep(wait_time)
+                    
+            except Exception as e:
+                logger.error(f"Error en intento {attempt + 1}: {str(e)}")
+                if attempt < max_retries - 1:
+                    time.sleep((attempt + 1) * 2)
+        
+        logger.error("❌ Todos los intentos de crear conversación webhook fallaron")
+        return {
+            "success": False,
+            "error": "max_retries_exceeded",
+            "attempts": max_retries
+        }
 
 
 # Función de conveniencia para uso directo
