@@ -144,42 +144,48 @@ class TDXWhatsAppBot:
             return None
     
     async def check_automatic_schedule_keywords(self, message_content: str) -> Optional[str]:
-        """Detectar keywords de agendamiento - pero solo para casos SIMPLES sin fechas/horas específicas"""
+        """Detectar keywords de agendamiento - OPTIMIZADO para leads fríos"""
         try:
-            # Keywords para agendamiento simple (solo "agendar" sin detalles)
-            SIMPLE_SCHEDULE_KEYWORDS = ["agendar", "programar", "disponibilidad", "horario"]
-            
             message_lower = message_content.lower()
             
-            # Detectar si el mensaje tiene fechas/horas específicas
+            # Keywords para agendamiento directo con fecha/hora
             time_indicators = ["mañana", "lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo", 
-                             "am", "pm", ":", "hora", "hoy", "tarde", "mañana", "noche",
+                             "am", "pm", ":", "hora", "hoy", "tarde", "noche",
                              "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"]
             
             has_specific_time = any(indicator in message_lower for indicator in time_indicators)
             
-            # Si tiene tiempo específico, NO usar detección automática - dejar que OpenAI lo procese
+            # Si tiene tiempo específico, dejar que OpenAI lo procese con schedule_consultation
             if has_specific_time:
-                logger.info(f"⏰ Scheduling message with specific time detected: {message_content[:50]} - passing to OpenAI")
-                return None  # Dejar que OpenAI use schedule_meeting_whatsapp
+                logger.info(f"⏰ Scheduling with specific time detected: {message_content[:50]} - passing to OpenAI")
+                return None  # OpenAI usará schedule_consultation
             
-            # Solo para mensajes simples como "quiero agendar" sin detalles
+            # Para leads fríos: solo agendar si ya tienen datos completos
+            SIMPLE_SCHEDULE_KEYWORDS = ["agendar", "programar", "reunion", "cita", "disponibilidad", "horario"]
+            
             for keyword in SIMPLE_SCHEDULE_KEYWORDS:
-                if keyword in message_lower and not has_specific_time:
-                    logger.info(f"📅 Simple schedule request triggered by: '{keyword}' - showing availability")
-                    
-                    # Solo mostrar disponibilidad para agendamiento simple
-                    availability_response = await self.check_availability_whatsapp()
-                    
-                    # Enviar respuesta inmediata
-                    await self.chatwoot_client.send_message_with_typing(
-                        self.conversation_id, availability_response, self.user_id
+                if keyword in message_lower:
+                    # Verificar si ya tenemos datos completos del contacto
+                    has_complete_data = (
+                        self.prospect_info.get('full_name') and 
+                        self.prospect_info.get('email') and 
+                        self.prospect_info.get('company_name')
                     )
                     
-                    logger.info(f"✅ Simple availability check completed for {self.contact_name}")
-                    return availability_response
+                    if has_complete_data:
+                        logger.info(f"📅 Schedule request with complete data: '{keyword}' - showing availability")
+                        # Si ya tenemos datos, mostrar disponibilidad
+                        availability_response = await self.check_availability_whatsapp()
+                        await self.chatwoot_client.send_message_with_typing(
+                            self.conversation_id, availability_response, self.user_id
+                        )
+                        return availability_response
+                    else:
+                        logger.info(f"📅 Schedule request without complete data: '{keyword}' - continue normal flow")
+                        # Si no tenemos datos, continuar flujo normal (OpenAI manejará)
+                        return None
             
-            # No keywords simples detectadas, continuar flujo normal
+            # No keywords detectadas, continuar flujo normal
             return None
             
         except Exception as e:
@@ -218,47 +224,79 @@ class TDXWhatsAppBot:
             return "Perdón, puedes repetir tu pregunta? 🤔"
     
     def build_conversation_context(self, user_message: str) -> List[Dict[str, str]]:
-        """Construir contexto de conversación optimizado"""
+        """Construir contexto optimizado para leads fríos de redes sociales"""
         webhook_email = self.prospect_info.get('email')
+        contact_name = self.contact_name if self.contact_name != "Cliente" else "no proporcionado"
         
-        system_prompt = f"""Eres Mati, ejecutivo comercial de TDX. Conversación natural y fluida.
+        system_prompt = f"""Eres Mati, ejecutivo comercial de TDX especializado en IA y automatización. Tu misión: convertir leads fríos de redes sociales en reuniones agendadas.
 
-CLIENTE: {self.contact_name} de {self.company_name}
-EMAIL: {webhook_email if webhook_email else 'Pendiente'}
+CONTEXTO DEL CLIENTE:
+- Nombre: {contact_name}
+- Empresa: {self.company_name if self.company_name != "Su empresa" else "no proporcionada"}
+- Email: {webhook_email if webhook_email else "no proporcionado"}
+- Origen: Lead frío de redes sociales
 
-PERSONALIDAD: Profesional, directo pero amigable. Conversación natural como humano real.
+FECHA ACTUAL: 2025-07-28 (lunes)
 
-OBJETIVO: Agendar reunión de forma conversacional y eficiente.
+PERSONALIDAD: 
+- Súper empático y consultivo
+- Respuestas brevísimas (máximo 15 palabras)
+- Palabras de empatía constantes: "claro", "entiendo", "perfecto", "sí señor", "por supuesto"
+- Como un consultor senior que entiende problemas empresariales
 
-HERRAMIENTAS DISPONIBLES:
-- schedule_meeting_whatsapp: Agendar reunión con fecha/hora específica
-- check_availability_whatsapp: Consultar disponibilidad (solo si necesario)
-- collect_email_whatsapp: Guardar email del cliente
+FLUJO OBLIGATORIO (5 PASOS):
+1. SALUDO + AGRADECIMIENTO (primera interacción)
+2. CONSULTAR SERVICIO DE INTERÉS 
+3. ENTENDER EL PROBLEMA (máximo 2 preguntas)
+4. RECOLECTAR DATOS (nombre, email, empresa)
+5. AGENDAR REUNIÓN INMEDIATAMENTE
+
+SERVICIOS TDX (responder solo si preguntan):
+
+🤖 IA GENERATIVA:
+- AI Agentic: Agentes autónomos para automatización
+- AI Voice: Asistentes de voz inteligentes  
+- AI Video: Creación de contenido en video
+- AI Chat: Agentes conversacionales tipo ChatGPT
+
+💻 TECNOLOGÍA:
+- MVP Software: Desarrollo rápido de productos
+- AI Chatbot: Bots para atención al cliente
+- AI Agentes Voz: Ventas y soporte automatizado
+- AI Avatars: Interfaces humanas digitales
+
+📈 NEGOCIO:
+- CTO as a Service: Dirección tecnológica
+- AI Assistant: Asistentes virtuales empresariales
+- AI CX: Experiencia del cliente con IA
+- IT Process: Automatización de procesos
+
+☁️ INDUSTRIAS: Aéreas, Automotor, Logística, Finanzas, Retail, Salud, Turismo, Pagos
+
+HERRAMIENTAS OBLIGATORIAS:
+- explore_business_need: Entender problema específico del cliente
+- collect_contact_data: Recolectar nombre, email, empresa
+- schedule_consultation: Agendar reunión consultiva
 - transfer_to_human_whatsapp: Transferir a humano si es necesario
 
 REGLAS DE CONVERSACIÓN:
-1. NUNCA uses listas con viñetas o opciones múltiple
-2. NUNCA agregues "OPCIONES:" o menús
-3. Habla naturalmente como persona real
-4. Máximo 2-3 oraciones por respuesta
+1. Primera respuesta: SIEMPRE saludar y agradecer contacto
+2. Segunda respuesta: Preguntar por servicio de interés
+3. Máximo 2 preguntas para entender problema
+4. Recolectar datos una sola vez
+5. Agendar inmediatamente
 
-USO OBLIGATORIO DE HERRAMIENTAS:
-- Email detectado (ej: "freddyrincones@gmail.com") → USAR collect_email_whatsapp INMEDIATAMENTE
-- Fecha/hora específica (ej: "lunes 3pm") → USAR schedule_meeting_whatsapp INMEDIATAMENTE  
-- Solicitud de agendamiento sin detalles → USAR check_availability_whatsapp
-- Solicitud de humano → USAR transfer_to_human_whatsapp
+CONVERSIÓN DE FECHAS (HOY: lunes 2025-07-28):
+- "mañana" → 2025-07-29, "miércoles" → 2025-07-30
+- "7pm" → "19:00", "2pm" → "14:00", "10am" → "10:00"
 
-CONVERSIÓN DE FECHAS (hoy es 2025-07-26):
-- "lunes" = 2025-07-28 (próximo lunes)
-- "mañana" = 2025-07-27  
-- "3pm" = "15:00"
-- "10am" = "10:00"
+EJEMPLOS DE RESPUESTAS:
+- Saludo: "¡Hola! Gracias por contactarnos. ¿En qué servicio de IA estás interesado?"
+- Problema: "Entiendo. ¿Cuál es el principal desafío que tienes ahora?"
+- Datos: "Perfecto. ¿Me confirmas tu nombre completo y email?"
+- Agendar: "Claro. ¿Te parece bien una reunión mañana a las 3pm?"
 
-DETECCIÓN DE EMAILS:
-- Cualquier texto con @ y dominio = EMAIL → usar collect_email_whatsapp
-- Ejemplo: "freddyrincones@gmail.com" = EMAIL válido
-
-Responde como ejecutivo comercial real, no como bot."""
+SÉ DIRECTO, EMPÁTICO Y EFICIENTE. Convierte leads fríos en reuniones en máximo 6 intercambios."""
         
         messages = [{"role": "system", "content": system_prompt}]
         
@@ -273,13 +311,95 @@ Responde como ejecutivo comercial real, no como bot."""
         return messages
     
     def get_whatsapp_tools(self) -> List[Dict[str, Any]]:
-        """Definir herramientas disponibles para el bot"""
+        """Herramientas optimizadas para leads fríos"""
         return [
             {
                 "type": "function",
                 "function": {
+                    "name": "explore_business_need",
+                    "description": "Explorar necesidad específica del negocio del cliente",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "service_interest": {
+                                "type": "string",
+                                "enum": ["AI_Generativa", "Tecnologia", "Negocio", "Cloud", "No_especifico"],
+                                "description": "Área de servicio de interés"
+                            },
+                            "business_problem": {
+                                "type": "string",
+                                "description": "Problema específico que necesita resolver"
+                            },
+                            "urgency_level": {
+                                "type": "string",
+                                "enum": ["alta", "media", "baja"],
+                                "description": "Urgencia de la necesidad"
+                            }
+                        },
+                        "required": ["service_interest", "business_problem", "urgency_level"]
+                    }
+                }
+            },
+            {
+                "type": "function", 
+                "function": {
+                    "name": "collect_contact_data",
+                    "description": "Recolectar datos completos del contacto de una vez",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "full_name": {
+                                "type": "string",
+                                "description": "Nombre completo del contacto"
+                            },
+                            "email": {
+                                "type": "string",
+                                "description": "Email empresarial"
+                            },
+                            "company_name": {
+                                "type": "string", 
+                                "description": "Nombre de la empresa"
+                            },
+                            "position": {
+                                "type": "string",
+                                "description": "Cargo/posición (si se menciona)"
+                            }
+                        },
+                        "required": ["full_name", "email", "company_name"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "schedule_consultation",
+                    "description": "Agendar reunión consultiva inmediatamente",
+                    "parameters": {
+                        "type": "object", 
+                        "properties": {
+                            "date": {
+                                "type": "string",
+                                "description": "Fecha en formato YYYY-MM-DD"
+                            },
+                            "time": {
+                                "type": "string",
+                                "description": "Hora en formato HH:MM"
+                            },
+                            "meeting_type": {
+                                "type": "string",
+                                "enum": ["consultoria_inicial", "demo_producto", "analisis_necesidades"],
+                                "description": "Tipo de reunión según la necesidad"
+                            }
+                        },
+                        "required": ["date", "time", "meeting_type"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
                     "name": "schedule_meeting_whatsapp",
-                    "description": "Agendar reunión estratégica cuando el cliente acepta",
+                    "description": "Agendar reunión estratégica cuando el cliente acepta (LEGACY - usar schedule_consultation instead)",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -329,7 +449,7 @@ Responde como ejecutivo comercial real, no como bot."""
                 "type": "function",
                 "function": {
                     "name": "collect_email_whatsapp",
-                    "description": "SIEMPRE usar cuando el cliente proporciona un email address (ej: nombre@empresa.com). Guardar el email en el sistema.",
+                    "description": "LEGACY: Guardar email individual (usar collect_contact_data para datos completos)",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -346,7 +466,7 @@ Responde como ejecutivo comercial real, no como bot."""
                 "type": "function",
                 "function": {
                     "name": "qualify_prospect_whatsapp",
-                    "description": "Calificar prospect usando metodología BANT (Budget, Authority, Need, Timeline)",
+                    "description": "LEGACY: Calificar prospect (integrado en explore_business_need)",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -378,14 +498,35 @@ Responde como ejecutivo comercial real, no como bot."""
         ]
     
     async def handle_function_call(self, tool_call) -> str:
-        """Manejar llamadas a herramientas"""
+        """Manejar llamadas a herramientas - optimizado para leads fríos"""
         function_name = tool_call.function.name
         function_args = json.loads(tool_call.function.arguments)
         
         logger.info(f"WhatsApp bot calling function: {function_name} with args: {function_args}")
         
         try:
-            if function_name == "schedule_meeting_whatsapp":
+            # Nuevas herramientas para leads fríos
+            if function_name == "explore_business_need":
+                return await self.explore_business_need(
+                    function_args.get("service_interest"),
+                    function_args.get("business_problem"),
+                    function_args.get("urgency_level")
+                )
+            elif function_name == "collect_contact_data":
+                return await self.collect_contact_data(
+                    function_args.get("full_name"),
+                    function_args.get("email"),
+                    function_args.get("company_name"),
+                    function_args.get("position")
+                )
+            elif function_name == "schedule_consultation":
+                return await self.schedule_consultation(
+                    function_args.get("date"),
+                    function_args.get("time"),
+                    function_args.get("meeting_type")
+                )
+            # Herramientas legacy mantenidas para compatibilidad
+            elif function_name == "schedule_meeting_whatsapp":
                 return await self.schedule_meeting_whatsapp(
                     function_args.get("date"),
                     function_args.get("time")
@@ -646,3 +787,101 @@ Perfecto, ahora puedo enviarte la invitación de la reunión.
                 
         except Exception as e:
             logger.error(f"Error creating handoff summary: {e}")
+    
+    # ============================================================================
+    # NUEVAS HERRAMIENTAS PARA LEADS FRÍOS DE REDES SOCIALES
+    # ============================================================================
+    
+    async def explore_business_need(self, service_interest: str, business_problem: str, urgency_level: str) -> str:
+        """Tool: Explorar necesidad de negocio y clasificar"""
+        try:
+            # Guardar información de necesidad
+            self.prospect_info.update({
+                'service_interest': service_interest,
+                'business_problem': business_problem,
+                'urgency_level': urgency_level,
+                'exploration_date': datetime.now().isoformat()
+            })
+            
+            # Respuesta empática y siguiente paso
+            empathy_words = ["Entiendo perfectamente", "Claro", "Sí señor", "Por supuesto"]
+            empathy = empathy_words[len(business_problem) % len(empathy_words)]
+            
+            if urgency_level == "alta":
+                return f"{empathy}, es una necesidad importante. ¿Me compartes tu nombre completo y email para coordinarte una reunión prioritaria?"
+            else:
+                return f"{empathy}, podemos ayudarte con eso. ¿Tu nombre completo y email para agendarte una consulta?"
+                
+        except Exception as e:
+            logger.error(f"Error exploring business need: {e}")
+            return "Entiendo tu necesidad. ¿Me compartes tu nombre y email para coordinar una reunión?"
+    
+    async def collect_contact_data(self, full_name: str, email: str, company_name: str, position: str = None) -> str:
+        """Tool: Recolectar datos completos del contacto"""
+        try:
+            # Validar email
+            import re
+            email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+            if not re.match(email_pattern, email.lower()):
+                return "El email no parece válido. ¿Podrías verificarlo?"
+            
+            # Actualizar toda la información
+            self.prospect_info.update({
+                'full_name': full_name,
+                'email': email.lower(),
+                'company_name': company_name,
+                'position': position,
+                'data_collected': True,
+                'collection_date': datetime.now().isoformat()
+            })
+            
+            # Actualizar atributos del bot
+            self.contact_name = full_name
+            self.company_name = company_name
+            
+            first_name = full_name.split()[0]
+            return f"Perfecto {first_name}. ¿Te parece bien una reunión mañana a las 3pm para revisar cómo podemos ayudar a {company_name}?"
+            
+        except Exception as e:
+            logger.error(f"Error collecting contact data: {e}")
+            return "Datos guardados. ¿Cuándo te conviene una reunión?"
+    
+    async def schedule_consultation(self, date: str, time: str, meeting_type: str) -> str:
+        """Tool: Agendar reunión consultiva"""
+        try:
+            final_email = self.prospect_info.get('email')
+            full_name = self.prospect_info.get('full_name', self.contact_name)
+            
+            if not final_email:
+                return "Necesito tu email para enviarte la invitación."
+            
+            # Usar graph_client existente
+            result = await graph_client.create_meeting(
+                attendee_email=final_email,
+                meeting_date=date,
+                meeting_time=time,
+                contact_name=full_name,
+                company_name=self.company_name,
+                meeting_type=meeting_type
+            )
+            
+            meeting_type_labels = {
+                "consultoria_inicial": "Consultoría inicial",
+                "demo_producto": "Demo personalizada", 
+                "analisis_necesidades": "Análisis de necesidades"
+            }
+            
+            first_name = full_name.split()[0] if full_name else "Cliente"
+            meeting_label = meeting_type_labels.get(meeting_type, 'Reunión')
+            
+            return f"""✅ ¡Listo {first_name}!
+
+📅 {meeting_label}: {date} a las {time}
+📧 Invitación enviada a: {final_email}
+🎯 Duración: 30 minutos
+
+Te llegará el enlace de Teams. ¡Nos vemos pronto! 🚀"""
+            
+        except Exception as e:
+            logger.error(f"Error scheduling consultation: {e}")
+            return "Hubo un problema agendando. Un ejecutivo te contactará pronto."
