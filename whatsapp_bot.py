@@ -42,7 +42,7 @@ class TDXWhatsAppBot:
             self.openai_client = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
     
     async def process_message(self, message_content: str) -> Optional[str]:
-        """Procesar mensaje con manejo de estado y UX + detección automática de transferencia"""
+        """Procesar mensaje enfocado en calificar y agendar clientes"""
         try:
             # Log mensaje del usuario
             self.conversation_log.append({
@@ -53,11 +53,6 @@ class TDXWhatsAppBot:
             })
             
             logger.info(f"Processing WhatsApp message from {self.contact_name}: {message_content[:50]}...")
-            
-            # DETECCIÓN AUTOMÁTICA DE KEYWORDS DE TRANSFERENCIA - CRÍTICO
-            transfer_triggered = await self.check_automatic_transfer_keywords(message_content)
-            if transfer_triggered:
-                return transfer_triggered
             
             # DETECCIÓN AUTOMÁTICA DE KEYWORDS DE AGENDAMIENTO - CRÍTICO
             schedule_triggered = await self.check_automatic_schedule_keywords(message_content)
@@ -93,55 +88,8 @@ class TDXWhatsAppBot:
             )
             return error_response
     
-    async def check_automatic_transfer_keywords(self, message_content: str) -> Optional[str]:
-        """Detectar keywords de transferencia automática - IDÉNTICO AL BOT DE VOZ"""
-        try:
-            # Keywords exactos del bot de voz
-            TRANSFER_KEYWORDS = [
-                "ejecutivo", "vendedor", "asesor", "consultor", "especialista",
-                "hablar con alguien", "persona real", "humano", "representante", "agente",
-                "gerente", "director", "supervisor", "jefe",
-                "experto", "técnico", "ingeniero",
-                "quiero hablar con", "me conecta con", "transfiere", "transferir",
-                "no quiero bot", "quiero persona", "alguien más",
-                "comunicar con", "conectar con", "pasar con"
-            ]
-            
-            message_lower = message_content.lower()
-            
-            # Verificar si alguna keyword está presente
-            for keyword in TRANSFER_KEYWORDS:
-                if keyword in message_lower:
-                    logger.info(f"🚨 AUTOMATIC TRANSFER triggered by keyword: '{keyword}' in message: {message_content[:50]}")
-                    
-                    # Transferir INMEDIATAMENTE sin preguntar
-                    transfer_response = await self.transfer_to_human_whatsapp(
-                        f"Transferencia automática activada por keyword: '{keyword}'"
-                    )
-                    
-                    # Enviar respuesta inmediata
-                    await self.chatwoot_client.send_message_with_typing(
-                        self.conversation_id, transfer_response, self.user_id
-                    )
-                    
-                    # Log de transferencia automática
-                    self.conversation_log.append({
-                        'turn': len(self.conversation_log) + 1,
-                        'type': 'automatic_transfer',
-                        'content': f"Auto-transfer triggered by: {keyword}",
-                        'response': transfer_response,
-                        'timestamp': datetime.now().isoformat()
-                    })
-                    
-                    logger.info(f"✅ Automatic transfer completed for {self.contact_name}")
-                    return transfer_response
-            
-            # No keywords detectadas, continuar flujo normal
-            return None
-            
-        except Exception as e:
-            logger.error(f"Error in automatic transfer detection: {e}")
-            return None
+    # ELIMINADA: Función de transferencia automática
+    # El bot debe enfocarse 100% en calificar y agendar clientes
     
     async def check_automatic_schedule_keywords(self, message_content: str) -> Optional[str]:
         """Detectar keywords de agendamiento - OPTIMIZADO para leads fríos"""
@@ -251,6 +199,7 @@ DETECCIÓN DE INTENCIONES:
 🔍 CASO ESPECÍFICO → PERSONALIZAR respuesta al caso
 🔍 CONFIRMACIÓN → AGENDAR sin repetir
 🔍 "ES POSIBLE?" → respond_to_question tool OBLIGATORIO
+🔍 "QUIERO HUMANO" → Intenta agendar primero, transferir solo si insiste mucho
 
 SERVICIOS TDX CON CASOS DE USO:
 
@@ -270,11 +219,12 @@ SERVICIOS TDX CON CASOS DE USO:
 - AI CX: Personalización experiencia cliente, satisfacción +40%
 - IT Process: Automatización workflows, eficiencia operacional
 
-HERRAMIENTAS INTELIGENTES:
+HERRAMIENTAS PRINCIPALES (ENFOQUE EN AGENDAR):
 - respond_to_question: OBLIGATORIO cuando cliente pregunta algo específico
 - explore_business_need: Entender problema específico con empatía
 - collect_contact_data: Recolectar datos personalizando al caso
-- schedule_consultation: Agendar con contexto específico del cliente
+- schedule_consultation: AGENDAR - objetivo principal del bot
+- transfer_to_human_whatsapp: SOLO casos extremos, siempre intenta agendar primero
 
 VALIDACIÓN EMOCIONAL OBLIGATORIA:
 - "¡Exactamente!" "¡Perfecto!" "¡Excelente elección!" 
@@ -463,13 +413,13 @@ SÉ SÚPER EMPÁTICO Y BREVE. Máximo 10-12 palabras por respuesta. Ve DIRECTO A
                 "type": "function",
                 "function": {
                     "name": "transfer_to_human_whatsapp",
-                    "description": "Transferir a agente humano cuando el cliente lo solicite o la consulta sea muy compleja",
+                    "description": "SOLO usar en casos EXTREMOS cuando no puedas resolver o agendar. Intenta siempre agendar primero.",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "reason": {
                                 "type": "string",
-                                "description": "Razón de la transferencia"
+                                "description": "Razón crítica por la cual no puedes resolver"
                             }
                         },
                         "required": ["reason"]
@@ -662,31 +612,25 @@ También puedes sugerir otra fecha si ninguna te funciona 😊"""
             logger.error(f"Error checking availability: {e}")
             return "📅 Tengo disponibilidad esta semana y la próxima.\n\n¿Qué día y hora prefieres para la reunión?"
     
-    async def transfer_to_human_whatsapp(self, reason: str = "Cliente solicita hablar con humano") -> str:
-        """Tool: Transferir a agente humano"""
+    async def transfer_to_human_whatsapp(self, reason: str = "Cliente insiste en hablar con humano") -> str:
+        """Tool: Transferencia RELUCTANTE - siempre intenta agendar primero"""
         try:
-            # Cambiar estado de conversación
+            # ANTES de transferir, intentar agendar una última vez
+            if "humano" in reason.lower() or "persona" in reason.lower():
+                return "¡Entiendo! ¿Antes de conectarte, te parece si agendamos 15 min para resolver tu consulta rápidamente?"
+            
+            # Solo transferir en casos realmente extremos
             success = await self.chatwoot_client.handoff_to_human(self.conversation_id)
             
             if success:
-                # Crear resumen para el agente humano
                 await self.create_handoff_summary(reason)
-                
-                return f"""🤝 **Transferencia a ejecutivo humano**
-
-Te estoy conectando con un especialista de nuestro equipo que podrá ayudarte mejor.
-
-**Motivo:** {reason}
-
-En un momento se unirá a la conversación.
-
-¡Gracias por tu paciencia! 😊"""
+                return f"Te conecto con un especialista. Motivo: {reason}"
             else:
-                return "⚠️ No pude transferirte en este momento.\n\nUn ejecutivo te contactará pronto por este mismo canal."
+                return "Un ejecutivo te contactará pronto."
                 
         except Exception as e:
             logger.error(f"Error transferring to human: {e}")
-            return "⚠️ Error en la transferencia.\n\nUn ejecutivo te contactará pronto."
+            return "Un ejecutivo te contactará pronto."
     
     async def collect_email_whatsapp(self, email: str) -> str:
         """Tool: Recolectar email del cliente"""
