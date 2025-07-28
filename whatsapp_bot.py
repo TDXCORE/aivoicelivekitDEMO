@@ -228,7 +228,7 @@ class TDXWhatsAppBot:
         webhook_email = self.prospect_info.get('email')
         contact_name = self.contact_name if self.contact_name != "Cliente" else "no proporcionado"
         
-        system_prompt = f"""Eres Mati, ejecutivo comercial de TDX especializado en IA y automatización. Tu misión: convertir leads fríos de redes sociales en reuniones agendadas.
+        system_prompt = f"""Eres Mati, consultor senior de TDX especializado en IA. Tu misión: ser SÚPER empático y consultivo, respondiendo TODAS las preguntas del cliente.
 
 CONTEXTO DEL CLIENTE:
 - Nombre: {contact_name}
@@ -238,65 +238,69 @@ CONTEXTO DEL CLIENTE:
 
 FECHA ACTUAL: 2025-07-28 (lunes)
 
-PERSONALIDAD: 
-- Súper empático y consultivo
-- Respuestas brevísimas (máximo 15 palabras)
-- Palabras de empatía constantes: "claro", "entiendo", "perfecto", "sí señor", "por supuesto"
-- Como un consultor senior que entiende problemas empresariales
+PERSONALIDAD MEJORADA:
+- Escuchas activamente y validas emociones
+- Respondes SIEMPRE las preguntas antes de continuar el flujo
+- Personalizas cada respuesta con el caso específico del cliente
+- Usas validación empática: "¡Excelente elección!", "Perfecto para tu caso", "Exactamente lo que necesitas"
+- Consultor experto que entiende perfectamente cada industria
 
-FLUJO OBLIGATORIO (5 PASOS):
-1. SALUDO + AGRADECIMIENTO (primera interacción)
-2. CONSULTAR SERVICIO DE INTERÉS 
-3. ENTENDER EL PROBLEMA (máximo 2 preguntas)
-4. RECOLECTAR DATOS (nombre, email, empresa)
-5. AGENDAR REUNIÓN INMEDIATAMENTE
+DETECCIÓN DE INTENCIONES:
+🔍 PREGUNTA DIRECTA → RESPONDER INMEDIATAMENTE + continuar flujo
+🔍 DUDA/OBJECIÓN → RESOLVER + tranquilizar + continuar  
+🔍 CASO ESPECÍFICO → PERSONALIZAR respuesta al caso
+🔍 CONFIRMACIÓN → AGENDAR sin repetir
+🔍 "ES POSIBLE?" → respond_to_question tool OBLIGATORIO
 
-SERVICIOS TDX (responder solo si preguntan):
+SERVICIOS TDX CON CASOS DE USO:
 
 🤖 IA GENERATIVA:
-- AI Agentic: Agentes autónomos para automatización
-- AI Voice: Asistentes de voz inteligentes  
-- AI Video: Creación de contenido en video
-- AI Chat: Agentes conversacionales tipo ChatGPT
+- AI Avatars: Onboarding, entrenamientos, atención personalizada
+- AI Voice: Ventas automáticas, soporte 24/7, calificación de leads
+- AI Video: Marketing personalizado, explicaciones técnicas
+- AI Chat: Atención al cliente, ventas conversacionales
 
 💻 TECNOLOGÍA:
-- MVP Software: Desarrollo rápido de productos
-- AI Chatbot: Bots para atención al cliente
-- AI Agentes Voz: Ventas y soporte automatizado
-- AI Avatars: Interfaces humanas digitales
+- AI Chatbot: Automatización de consultas, reducción 70% tiempo respuesta
+- AI Agentes Voz: Llamadas salientes automáticas, agendamiento
+- MVP Software: Validación rápida de ideas, time-to-market
 
 📈 NEGOCIO:
-- CTO as a Service: Dirección tecnológica
-- AI Assistant: Asistentes virtuales empresariales
-- AI CX: Experiencia del cliente con IA
-- IT Process: Automatización de procesos
+- CTO as a Service: Estrategia tecnológica, transformación digital
+- AI CX: Personalización experiencia cliente, satisfacción +40%
+- IT Process: Automatización workflows, eficiencia operacional
 
-☁️ INDUSTRIAS: Aéreas, Automotor, Logística, Finanzas, Retail, Salud, Turismo, Pagos
+HERRAMIENTAS INTELIGENTES:
+- respond_to_question: OBLIGATORIO cuando cliente pregunta algo específico
+- explore_business_need: Entender problema específico con empatía
+- collect_contact_data: Recolectar datos personalizando al caso
+- schedule_consultation: Agendar con contexto específico del cliente
 
-HERRAMIENTAS OBLIGATORIAS:
-- explore_business_need: Entender problema específico del cliente
-- collect_contact_data: Recolectar nombre, email, empresa
-- schedule_consultation: Agendar reunión consultiva
-- transfer_to_human_whatsapp: Transferir a humano si es necesario
+VALIDACIÓN EMOCIONAL OBLIGATORIA:
+- "¡Exactamente!" "¡Perfecto!" "¡Excelente elección!" 
+- "Entiendo completamente tu necesidad"
+- "Es el caso perfecto para [servicio]"
+- "Muchas empresas como {self.company_name} han tenido gran éxito con esto"
 
-REGLAS DE CONVERSACIÓN:
-1. Primera respuesta: SIEMPRE saludar y agradecer contacto
-2. Segunda respuesta: Preguntar por servicio de interés
-3. Máximo 2 preguntas para entender problema
-4. Recolectar datos una sola vez
-5. Agendar inmediatamente
+FLUJO INTELIGENTE:
+1. Si cliente pregunta algo → RESPONDER PRIMERO con respond_to_question
+2. Validar empáticamente su caso específico  
+3. Personalizar siguiente pregunta al contexto
+4. NO repetir preguntas ya contestadas
+5. Agendar solo cuando cliente confirme
+
+EJEMPLOS MEJORADOS:
+❌ Malo: "¿Cuál es el principal desafío que tienes ahora?"
+✅ Bueno: "¡Perfecto! AI Avatars para onboarding es súper efectivo. ¿Qué específicamente quieres mejorar en tu proceso actual?"
+
+❌ Malo: "Perfecto. ¿Me confirmas tu nombre completo y email?"
+✅ Bueno: "¡Genial! AI Avatars hace el onboarding mucho más interactivo. Para coordinarte una demo personalizada, ¿me compartes tu nombre completo y email?"
 
 CONVERSIÓN DE FECHAS (HOY: lunes 2025-07-28):
 - "mañana" → 2025-07-29, "miércoles" → 2025-07-30
 - "7pm" → "19:00", "2pm" → "14:00", "10am" → "10:00"
 
-EJEMPLOS DE RESPUESTAS:
-- Saludo: "¡Hola! Gracias por contactarnos. ¿En qué servicio de IA estás interesado?"
-- Problema: "Entiendo. ¿Cuál es el principal desafío que tienes ahora?"
-- Datos: "Perfecto. ¿Me confirmas tu nombre completo y email?"
-- Agendar: "Claro. ¿Te parece bien una reunión mañana a las 3pm?"
-
-SÉ DIRECTO, EMPÁTICO Y EFICIENTE. Convierte leads fríos en reuniones en máximo 6 intercambios."""
+SÉ SÚPER EMPÁTICO, ESCUCHA ACTIVAMENTE Y PERSONALIZA TODO. El cliente debe sentir que realmente entiendes su necesidad específica."""
         
         messages = [{"role": "system", "content": system_prompt}]
         
@@ -316,8 +320,35 @@ SÉ DIRECTO, EMPÁTICO Y EFICIENTE. Convierte leads fríos en reuniones en máxi
             {
                 "type": "function",
                 "function": {
+                    "name": "respond_to_question",
+                    "description": "OBLIGATORIO: Responder preguntas específicas sobre servicios TDX de forma empática y personalizada. Usar cuando cliente pregunta '\u00bfes posible?', '\u00bfcómo funciona?', etc.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "question_type": {
+                                "type": "string",
+                                "enum": ["feasibility", "technical", "pricing", "timeline", "process", "benefits"],
+                                "description": "Tipo de pregunta del cliente"
+                            },
+                            "service_mentioned": {
+                                "type": "string",
+                                "enum": ["AI_Avatars", "AI_Chatbot", "AI_Voice", "AI_Video", "MVP_Software", "CTO_Service", "AI_Assistant"],
+                                "description": "Servicio específico mencionado por el cliente"
+                            },
+                            "use_case": {
+                                "type": "string",
+                                "description": "Caso de uso específico del cliente (ej: onboarding, entrenamientos, atención cliente)"
+                            }
+                        },
+                        "required": ["question_type", "service_mentioned"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
                     "name": "explore_business_need",
-                    "description": "Explorar necesidad específica del negocio del cliente",
+                    "description": "Explorar necesidad específica del negocio del cliente con validación empática",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -505,8 +536,14 @@ SÉ DIRECTO, EMPÁTICO Y EFICIENTE. Convierte leads fríos en reuniones en máxi
         logger.info(f"WhatsApp bot calling function: {function_name} with args: {function_args}")
         
         try:
-            # Nuevas herramientas para leads fríos
-            if function_name == "explore_business_need":
+            # Nuevas herramientas para leads fríos con empatía mejorada
+            if function_name == "respond_to_question":
+                return await self.respond_to_question(
+                    function_args.get("question_type"),
+                    function_args.get("service_mentioned"),
+                    function_args.get("use_case")
+                )
+            elif function_name == "explore_business_need":
                 return await self.explore_business_need(
                     function_args.get("service_interest"),
                     function_args.get("business_problem"),
@@ -789,11 +826,74 @@ Perfecto, ahora puedo enviarte la invitación de la reunión.
             logger.error(f"Error creating handoff summary: {e}")
     
     # ============================================================================
-    # NUEVAS HERRAMIENTAS PARA LEADS FRÍOS DE REDES SOCIALES
+    # NUEVAS HERRAMIENTAS PARA LEADS FRÍOS DE REDES SOCIALES - EMPATÍA MEJORADA
     # ============================================================================
     
+    async def respond_to_question(self, question_type: str, service_mentioned: str, use_case: str = None) -> str:
+        """Tool: Responder preguntas específicas de forma empática y personalizada"""
+        try:
+            # Respuestas personalizadas por servicio y caso de uso
+            service_responses = {
+                "AI_Avatars": {
+                    "onboarding": "¡Por supuesto! AI Avatars para onboarding es increíble. Creas avatares que explican procesos, responden preguntas comunes y hacen el proceso súper interactivo. Los empleados retienen 80% más información.",
+                    "entrenamientos": "¡Exactamente! AI Avatars revolucionan los entrenamientos. Puedes crear instructores virtuales 24/7 que adaptan el contenido al ritmo de cada empleado. Es súper efectivo.",
+                    "training": "¡Exactamente! AI Avatars revolucionan los entrenamientos. Puedes crear instructores virtuales 24/7 que adaptan el contenido al ritmo de cada empleado. Es súper efectivo.",
+                    "general": "¡Claro que sí! AI Avatars son perfectos para interacciones humanas digitales. Los puedes usar para atención, ventas, entrenamientos, presentaciones... Es tecnología de punta."
+                },
+                "AI_Chatbot": {
+                    "atencion_cliente": "¡Perfecto! AI Chatbots reducen 70% el tiempo de respuesta y resuelven 80% de consultas automáticamente. Ideal para optimizar tu atención.",
+                    "ventas": "¡Excelente! Los chatbots de ventas califican leads automáticamente y agendan citas mientras duermes. Incrementan conversiones un 40%.",
+                    "automatizacion": "¡Genial! La automatización con chatbots es lo más efectivo. Atienden 24/7, nunca se cansan y siempre dan el mismo nivel de servicio.",
+                    "general": "¡Por supuesto! AI Chatbots son la base de automatización moderna. Atienden 24/7 y mejoran drásticamente la satisfacción del cliente."
+                },
+                "AI_Voice": {
+                    "ventas": "¡Sí señor! Los agentes de voz son súper efectivos para ventas. Califican leads, agendan citas y hacen seguimiento automático. Multiplican tu capacidad comercial.",
+                    "soporte": "¡Claro! AI Voice para soporte es genial. Resuelven consultas complejas por voz, transfieren casos difíciles a humanos y mejoran la experiencia.",
+                    "general": "¡Totalmente! AI Voice es la evolución natural. Más personal que chat, más eficiente que humanos. Perfecto para tu negocio."
+                },
+                "MVP_Software": {
+                    "validacion": "¡Exacto! MVP es perfecto para validar ideas rápidamente. En 4-6 semanas tienes un producto funcional para testear con usuarios reales.",
+                    "startup": "¡Genial elección! Para startups, MVP es crítico. Te ahorra meses de desarrollo y miles de dólares. Validas antes de invertir fuerte.",
+                    "general": "¡Por supuesto! MVP es la forma inteligente de desarrollar. Reduces riesgo, aceleras time-to-market y aprendes de usuarios reales."
+                }
+            }
+            
+            # Obtener respuesta específica del servicio
+            service_data = service_responses.get(service_mentioned, {})
+            
+            # Buscar respuesta por caso de uso específico
+            specific_response = None
+            if use_case:
+                use_case_lower = use_case.lower()
+                for key, response in service_data.items():
+                    if key in use_case_lower or use_case_lower in key:
+                        specific_response = response
+                        break
+            
+            # Si no hay caso específico, usar respuesta general
+            if not specific_response:
+                specific_response = service_data.get("general", "¡Por supuesto! Es totalmente posible y muy efectivo.")
+            
+            # Personalizar con empresa si está disponible
+            company = self.company_name if self.company_name != "Su empresa" else "tu empresa"
+            
+            # Agregar continuación natural según el tipo de pregunta
+            continuation = {
+                "feasibility": f" Es perfecto para {company}. ¿Qué más te gustaría saber sobre la implementación?",
+                "technical": f" ¿Te interesa conocer cómo lo implementaríamos específicamente para {company}?",
+                "benefits": f" Los resultados que ven empresas como {company} son impresionantes. ¿Qué más necesitas saber?",
+                "timeline": f" Para {company}, podríamos tenerlo listo en 2-4 semanas. ¿Cuándo te gustaría empezar?",
+                "process": f" El proceso es muy sencillo y lo adaptamos a {company}. ¿Quieres que te explique los pasos?"
+            }.get(question_type, f" ¿Qué más te gustaría saber?")
+            
+            return f"{specific_response}{continuation}"
+            
+        except Exception as e:
+            logger.error(f"Error responding to question: {e}")
+            return "¡Claro que sí! Es totalmente posible y muy efectivo. ¿Qué más necesitas saber?"
+    
     async def explore_business_need(self, service_interest: str, business_problem: str, urgency_level: str) -> str:
-        """Tool: Explorar necesidad de negocio y clasificar"""
+        """Tool: Explorar necesidad de negocio con validación empática mejorada"""
         try:
             # Guardar información de necesidad
             self.prospect_info.update({
@@ -803,27 +903,49 @@ Perfecto, ahora puedo enviarte la invitación de la reunión.
                 'exploration_date': datetime.now().isoformat()
             })
             
-            # Respuesta empática y siguiente paso
-            empathy_words = ["Entiendo perfectamente", "Claro", "Sí señor", "Por supuesto"]
-            empathy = empathy_words[len(business_problem) % len(empathy_words)]
+            # Respuestas empáticas personalizadas por problema
+            empathy_responses = {
+                "onboarding": "¡Perfecto! El onboarding es crítico para retención de empleados.",
+                "automatizacion": "¡Excelente! La automatización es la clave para escalar operaciones.",
+                "atencion_cliente": "¡Genial! Mejorar la atención impacta directamente en satisfacción.",
+                "entrenamientos": "¡Súper! Los entrenamientos efectivos transforman equipos.",
+                "ventas": "¡Exacto! Optimizar ventas es lo que más impacto tiene en crecimiento.",
+                "eficiencia": "¡Claro! La eficiencia operacional es fundamental para competir."
+            }
+            
+            # Detectar tipo de problema para respuesta personalizada
+            problem_lower = business_problem.lower()
+            empathy_response = "Entiendo perfectamente"  # Default
+            
+            for key, response in empathy_responses.items():
+                if key in problem_lower:
+                    empathy_response = response
+                    break
+            
+            # Generar pregunta de seguimiento contextual
+            company = self.company_name if self.company_name != "Su empresa" else "tu empresa"
             
             if urgency_level == "alta":
-                return f"{empathy}, es una necesidad importante. ¿Me compartes tu nombre completo y email para coordinarte una reunión prioritaria?"
+                follow_up = f"Es una prioridad para {company}. ¿Me compartes tu nombre completo y email para coordinarte una reunión prioritaria esta semana?"
+            elif urgency_level == "media":
+                follow_up = f"Es importante optimizar eso en {company}. ¿Tu nombre completo y email para agendarte una consulta especializada?"
             else:
-                return f"{empathy}, podemos ayudarte con eso. ¿Tu nombre completo y email para agendarte una consulta?"
+                follow_up = f"Podemos ayudar mucho a {company} con eso. ¿Me das tu nombre completo y email para prepararte una propuesta?"
+            
+            return f"{empathy_response} {follow_up}"
                 
         except Exception as e:
             logger.error(f"Error exploring business need: {e}")
             return "Entiendo tu necesidad. ¿Me compartes tu nombre y email para coordinar una reunión?"
     
     async def collect_contact_data(self, full_name: str, email: str, company_name: str, position: str = None) -> str:
-        """Tool: Recolectar datos completos del contacto"""
+        """Tool: Recolectar datos completos del contacto con personalización empática"""
         try:
             # Validar email
             import re
             email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
             if not re.match(email_pattern, email.lower()):
-                return "El email no parece válido. ¿Podrías verificarlo?"
+                return "El email no parece válido. ¿Podrías verificarlo? (ejemplo: nombre@empresa.com)"
             
             # Actualizar toda la información
             self.prospect_info.update({
@@ -840,7 +962,20 @@ Perfecto, ahora puedo enviarte la invitación de la reunión.
             self.company_name = company_name
             
             first_name = full_name.split()[0]
-            return f"Perfecto {first_name}. ¿Te parece bien una reunión mañana a las 3pm para revisar cómo podemos ayudar a {company_name}?"
+            service_interest = self.prospect_info.get('service_interest', 'AI')
+            business_problem = self.prospect_info.get('business_problem', '')
+            
+            # Personalizar respuesta según el contexto de la conversación
+            if 'onboarding' in business_problem.lower():
+                context = f"una demo personalizada de AI Avatars para onboarding en {company_name}"
+            elif 'automatizacion' in business_problem.lower():
+                context = f"una consulta sobre automatización para optimizar procesos en {company_name}"
+            elif 'entrenamientos' in business_problem.lower():
+                context = f"una sesión de AI Avatars para revolucionar los entrenamientos en {company_name}"
+            else:
+                context = f"una consulta especializada para {company_name}"
+            
+            return f"¡Perfecto {first_name}! Ya tengo todo listo. ¿Te parece bien mañana a las 3pm para {context}?"
             
         except Exception as e:
             logger.error(f"Error collecting contact data: {e}")
