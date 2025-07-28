@@ -239,11 +239,11 @@ CONTEXTO DEL CLIENTE:
 FECHA ACTUAL: 2025-07-28 (lunes)
 
 PERSONALIDAD MEJORADA:
-- Escuchas activamente y validas emociones
+- RESPUESTAS SÚPER BREVES: Máximo 10-12 palabras por respuesta
+- Escuchas activamente y validas emociones EN POCAS PALABRAS
 - Respondes SIEMPRE las preguntas antes de continuar el flujo
-- Personalizas cada respuesta con el caso específico del cliente
-- Usas validación empática: "¡Excelente elección!", "Perfecto para tu caso", "Exactamente lo que necesitas"
-- Consultor experto que entiende perfectamente cada industria
+- Usas validación empática BREVE: "¡Perfecto!", "Genial", "Exacto"
+- Consultor experto que va DIRECTO AL GRANO
 
 DETECCIÓN DE INTENCIONES:
 🔍 PREGUNTA DIRECTA → RESPONDER INMEDIATAMENTE + continuar flujo
@@ -289,18 +289,18 @@ FLUJO INTELIGENTE:
 4. NO repetir preguntas ya contestadas
 5. Agendar solo cuando cliente confirme
 
-EJEMPLOS MEJORADOS:
-❌ Malo: "¿Cuál es el principal desafío que tienes ahora?"
-✅ Bueno: "¡Perfecto! AI Avatars para onboarding es súper efectivo. ¿Qué específicamente quieres mejorar en tu proceso actual?"
+EJEMPLOS BREVES:
+❌ Malo: "¡Perfecto! AI Avatars para onboarding es súper efectivo. ¿Qué específicamente quieres mejorar?"
+✅ Bueno: "¡Genial! ¿Para cuántos empleados?"
 
-❌ Malo: "Perfecto. ¿Me confirmas tu nombre completo y email?"
-✅ Bueno: "¡Genial! AI Avatars hace el onboarding mucho más interactivo. Para coordinarte una demo personalizada, ¿me compartes tu nombre completo y email?"
+❌ Malo: "Para coordinarte una demo personalizada, ¿me compartes tu nombre completo y email?"
+✅ Bueno: "¡Perfecto! ¿Tu nombre y email?"
 
 CONVERSIÓN DE FECHAS (HOY: lunes 2025-07-28):
 - "mañana" → 2025-07-29, "miércoles" → 2025-07-30
 - "7pm" → "19:00", "2pm" → "14:00", "10am" → "10:00"
 
-SÉ SÚPER EMPÁTICO, ESCUCHA ACTIVAMENTE Y PERSONALIZA TODO. El cliente debe sentir que realmente entiendes su necesidad específica."""
+SÉ SÚPER EMPÁTICO Y BREVE. Máximo 10-12 palabras por respuesta. Ve DIRECTO AL GRANO sin aburrir al cliente."""
         
         messages = [{"role": "system", "content": system_prompt}]
         
@@ -832,29 +832,29 @@ Perfecto, ahora puedo enviarte la invitación de la reunión.
     async def respond_to_question(self, question_type: str, service_mentioned: str, use_case: str = None) -> str:
         """Tool: Responder preguntas específicas de forma empática y personalizada"""
         try:
-            # Respuestas personalizadas por servicio y caso de uso
+            # Respuestas BREVES personalizadas por servicio
             service_responses = {
                 "AI_Avatars": {
-                    "onboarding": "¡Por supuesto! AI Avatars para onboarding es increíble. Creas avatares que explican procesos, responden preguntas comunes y hacen el proceso súper interactivo. Los empleados retienen 80% más información.",
-                    "entrenamientos": "¡Exactamente! AI Avatars revolucionan los entrenamientos. Puedes crear instructores virtuales 24/7 que adaptan el contenido al ritmo de cada empleado. Es súper efectivo.",
-                    "training": "¡Exactamente! AI Avatars revolucionan los entrenamientos. Puedes crear instructores virtuales 24/7 que adaptan el contenido al ritmo de cada empleado. Es súper efectivo.",
-                    "general": "¡Claro que sí! AI Avatars son perfectos para interacciones humanas digitales. Los puedes usar para atención, ventas, entrenamientos, presentaciones... Es tecnología de punta."
+                    "onboarding": "¡Claro! Es perfecto para onboarding.",
+                    "entrenamientos": "¡Exacto! Ideal para entrenamientos.",
+                    "training": "¡Exacto! Ideal para entrenamientos.",
+                    "general": "¡Sí! Es súper efectivo."
                 },
                 "AI_Chatbot": {
-                    "atencion_cliente": "¡Perfecto! AI Chatbots reducen 70% el tiempo de respuesta y resuelven 80% de consultas automáticamente. Ideal para optimizar tu atención.",
-                    "ventas": "¡Excelente! Los chatbots de ventas califican leads automáticamente y agendan citas mientras duermes. Incrementan conversiones un 40%.",
-                    "automatizacion": "¡Genial! La automatización con chatbots es lo más efectivo. Atienden 24/7, nunca se cansan y siempre dan el mismo nivel de servicio.",
-                    "general": "¡Por supuesto! AI Chatbots son la base de automatización moderna. Atienden 24/7 y mejoran drásticamente la satisfacción del cliente."
+                    "atencion_cliente": "¡Perfecto! Reduce 70% tiempo respuesta.",
+                    "ventas": "¡Genial! Incrementa conversiones 40%.",
+                    "automatizacion": "¡Exacto! Atienden 24/7 sin parar.",
+                    "general": "¡Claro! Es la base de automatización."
                 },
                 "AI_Voice": {
-                    "ventas": "¡Sí señor! Los agentes de voz son súper efectivos para ventas. Califican leads, agendan citas y hacen seguimiento automático. Multiplican tu capacidad comercial.",
-                    "soporte": "¡Claro! AI Voice para soporte es genial. Resuelven consultas complejas por voz, transfieren casos difíciles a humanos y mejoran la experiencia.",
-                    "general": "¡Totalmente! AI Voice es la evolución natural. Más personal que chat, más eficiente que humanos. Perfecto para tu negocio."
+                    "ventas": "¡Sí! Multiplica tu capacidad comercial.",
+                    "soporte": "¡Perfecto! Mejora experiencia cliente.",
+                    "general": "¡Totalmente! Más personal que chat."
                 },
                 "MVP_Software": {
-                    "validacion": "¡Exacto! MVP es perfecto para validar ideas rápidamente. En 4-6 semanas tienes un producto funcional para testear con usuarios reales.",
-                    "startup": "¡Genial elección! Para startups, MVP es crítico. Te ahorra meses de desarrollo y miles de dólares. Validas antes de invertir fuerte.",
-                    "general": "¡Por supuesto! MVP es la forma inteligente de desarrollar. Reduces riesgo, aceleras time-to-market y aprendes de usuarios reales."
+                    "validacion": "¡Exacto! Listo en 4-6 semanas.",
+                    "startup": "¡Genial! Te ahorra meses desarrollo.",
+                    "general": "¡Claro! Reduces riesgo muchísimo."
                 }
             }
             
@@ -877,20 +877,20 @@ Perfecto, ahora puedo enviarte la invitación de la reunión.
             # Personalizar con empresa si está disponible
             company = self.company_name if self.company_name != "Su empresa" else "tu empresa"
             
-            # Agregar continuación natural según el tipo de pregunta
+            # Continuación BREVE según tipo de pregunta
             continuation = {
-                "feasibility": f" Es perfecto para {company}. ¿Qué más te gustaría saber sobre la implementación?",
-                "technical": f" ¿Te interesa conocer cómo lo implementaríamos específicamente para {company}?",
-                "benefits": f" Los resultados que ven empresas como {company} son impresionantes. ¿Qué más necesitas saber?",
-                "timeline": f" Para {company}, podríamos tenerlo listo en 2-4 semanas. ¿Cuándo te gustaría empezar?",
-                "process": f" El proceso es muy sencillo y lo adaptamos a {company}. ¿Quieres que te explique los pasos?"
-            }.get(question_type, f" ¿Qué más te gustaría saber?")
+                "feasibility": f" ¿Para cuántos empleados?",
+                "technical": f" ¿Cómo lo implementamos?",
+                "benefits": f" ¿Qué más necesitas saber?",
+                "timeline": f" ¿Cuándo empezamos?",
+                "process": f" ¿Te explico los pasos?"
+            }.get(question_type, f" ¿Qué más quieres saber?")
             
             return f"{specific_response}{continuation}"
             
         except Exception as e:
             logger.error(f"Error responding to question: {e}")
-            return "¡Claro que sí! Es totalmente posible y muy efectivo. ¿Qué más necesitas saber?"
+            return "¡Claro! Es súper efectivo. ¿Qué necesitas saber?"
     
     async def explore_business_need(self, service_interest: str, business_problem: str, urgency_level: str) -> str:
         """Tool: Explorar necesidad de negocio con validación empática mejorada"""
@@ -903,40 +903,36 @@ Perfecto, ahora puedo enviarte la invitación de la reunión.
                 'exploration_date': datetime.now().isoformat()
             })
             
-            # Respuestas empáticas personalizadas por problema
+            # Respuestas empáticas BREVES por problema
             empathy_responses = {
-                "onboarding": "¡Perfecto! El onboarding es crítico para retención de empleados.",
-                "automatizacion": "¡Excelente! La automatización es la clave para escalar operaciones.",
-                "atencion_cliente": "¡Genial! Mejorar la atención impacta directamente en satisfacción.",
-                "entrenamientos": "¡Súper! Los entrenamientos efectivos transforman equipos.",
-                "ventas": "¡Exacto! Optimizar ventas es lo que más impacto tiene en crecimiento.",
-                "eficiencia": "¡Claro! La eficiencia operacional es fundamental para competir."
+                "onboarding": "¡Perfecto! Es crítico para retención.",
+                "automatizacion": "¡Genial! Clave para escalar.",
+                "atencion_cliente": "¡Exacto! Impacta satisfacción directamente.",
+                "entrenamientos": "¡Súper! Transforma equipos.",
+                "ventas": "¡Claro! Máximo impacto en crecimiento.",
+                "eficiencia": "¡Exacto! Fundamental para competir."
             }
             
-            # Detectar tipo de problema para respuesta personalizada
+            # Detectar tipo de problema
             problem_lower = business_problem.lower()
-            empathy_response = "Entiendo perfectamente"  # Default
+            empathy_response = "Entiendo"  # Default
             
             for key, response in empathy_responses.items():
                 if key in problem_lower:
                     empathy_response = response
                     break
             
-            # Generar pregunta de seguimiento contextual
-            company = self.company_name if self.company_name != "Su empresa" else "tu empresa"
-            
+            # Pregunta BREVE según urgencia
             if urgency_level == "alta":
-                follow_up = f"Es una prioridad para {company}. ¿Me compartes tu nombre completo y email para coordinarte una reunión prioritaria esta semana?"
-            elif urgency_level == "media":
-                follow_up = f"Es importante optimizar eso en {company}. ¿Tu nombre completo y email para agendarte una consulta especializada?"
+                follow_up = " ¿Tu nombre y email?"
             else:
-                follow_up = f"Podemos ayudar mucho a {company} con eso. ¿Me das tu nombre completo y email para prepararte una propuesta?"
+                follow_up = " ¿Nombre y email?"
             
-            return f"{empathy_response} {follow_up}"
+            return f"{empathy_response}{follow_up}"
                 
         except Exception as e:
             logger.error(f"Error exploring business need: {e}")
-            return "Entiendo tu necesidad. ¿Me compartes tu nombre y email para coordinar una reunión?"
+            return "Entiendo. ¿Tu nombre y email?"
     
     async def collect_contact_data(self, full_name: str, email: str, company_name: str, position: str = None) -> str:
         """Tool: Recolectar datos completos del contacto con personalización empática"""
@@ -945,7 +941,7 @@ Perfecto, ahora puedo enviarte la invitación de la reunión.
             import re
             email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
             if not re.match(email_pattern, email.lower()):
-                return "El email no parece válido. ¿Podrías verificarlo? (ejemplo: nombre@empresa.com)"
+                return "Email inválido. ¿Podrías verificarlo?"
             
             # Actualizar toda la información
             self.prospect_info.update({
@@ -962,24 +958,12 @@ Perfecto, ahora puedo enviarte la invitación de la reunión.
             self.company_name = company_name
             
             first_name = full_name.split()[0]
-            service_interest = self.prospect_info.get('service_interest', 'AI')
-            business_problem = self.prospect_info.get('business_problem', '')
             
-            # Personalizar respuesta según el contexto de la conversación
-            if 'onboarding' in business_problem.lower():
-                context = f"una demo personalizada de AI Avatars para onboarding en {company_name}"
-            elif 'automatizacion' in business_problem.lower():
-                context = f"una consulta sobre automatización para optimizar procesos en {company_name}"
-            elif 'entrenamientos' in business_problem.lower():
-                context = f"una sesión de AI Avatars para revolucionar los entrenamientos en {company_name}"
-            else:
-                context = f"una consulta especializada para {company_name}"
-            
-            return f"¡Perfecto {first_name}! Ya tengo todo listo. ¿Te parece bien mañana a las 3pm para {context}?"
+            return f"¡Perfecto {first_name}! ¿Mañana 3pm?"
             
         except Exception as e:
             logger.error(f"Error collecting contact data: {e}")
-            return "Datos guardados. ¿Cuándo te conviene una reunión?"
+            return "Listo. ¿Cuándo te conviene?"
     
     async def schedule_consultation(self, date: str, time: str, meeting_type: str) -> str:
         """Tool: Agendar reunión consultiva"""
@@ -988,7 +972,7 @@ Perfecto, ahora puedo enviarte la invitación de la reunión.
             full_name = self.prospect_info.get('full_name', self.contact_name)
             
             if not final_email:
-                return "Necesito tu email para enviarte la invitación."
+                return "Necesito tu email."
             
             # Usar graph_client existente
             result = await graph_client.create_meeting(
@@ -1007,16 +991,9 @@ Perfecto, ahora puedo enviarte la invitación de la reunión.
             }
             
             first_name = full_name.split()[0] if full_name else "Cliente"
-            meeting_label = meeting_type_labels.get(meeting_type, 'Reunión')
             
-            return f"""✅ ¡Listo {first_name}!
-
-📅 {meeting_label}: {date} a las {time}
-📧 Invitación enviada a: {final_email}
-🎯 Duración: 30 minutos
-
-Te llegará el enlace de Teams. ¡Nos vemos pronto! 🚀"""
+            return f"✅ ¡Listo {first_name}!\n\n📅 {date} a las {time}\n📧 Invitación enviada\n\n¡Nos vemos! 🚀"
             
         except Exception as e:
             logger.error(f"Error scheduling consultation: {e}")
-            return "Hubo un problema agendando. Un ejecutivo te contactará pronto."
+            return "Error agendando. Te contactamos pronto."
