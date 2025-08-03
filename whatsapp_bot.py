@@ -165,25 +165,46 @@ class TDXWhatsAppBot:
             # 5. DETECCIÓN DE SERVICIO + MICRO-VALOR
             if SERVICE_MAPPER_AVAILABLE:
                 service_match = service_mapper.detect_service(message_content)
-                if service_match and service_match.confidence > 0.7:
+                # Threshold más bajo para términos específicos de servicios
+                confidence_threshold = 0.4 if any(term in message_content.lower() for term in 
+                    ['chatbot', 'voice', 'video', 'assistant', 'whatsapp']) else 0.7
+                
+                if service_match and service_match.confidence >= confidence_threshold:
                     # Actualizar siempre para permitir cambios de servicio
                     self.prospect_info['detected_service'] = service_match.service
                     self.prospect_info['industry'] = service_match.industry_hint or 'general'
                     
-                    # Inyectar micro-valor ultra corto
-                    if MICRO_VALUE_AVAILABLE:
-                        micro_response = micro_value_injector.get_micro_value(
-                            service_match.service, 
-                            service_match.industry_hint or 'general'
-                        )
-                        await self.send_response_with_ux(micro_response)
+                    # Detectar si pide MÁS INFORMACIÓN vs primera mención
+                    info_request_keywords = ['más información', 'dame información', 'información sobre', 
+                                           'detalles', 'dime más', 'explícame', 'como funciona']
+                    is_info_request = any(keyword in message_content.lower() for keyword in info_request_keywords)
+                    
+                    if is_info_request:
+                        # Dar información detallada específica del servicio
+                        detailed_info = self._get_service_detailed_info(service_match.service)
+                        await self.send_response_with_ux(detailed_info)
                         self.conversation_log.append({
                             'turn': len(self.conversation_log) + 1,
                             'type': 'assistant_message',
-                            'content': micro_response,
+                            'content': detailed_info,
                             'timestamp': datetime.now().isoformat()
                         })
-                        return micro_response
+                        return detailed_info
+                    else:
+                        # Inyectar micro-valor ultra corto
+                        if MICRO_VALUE_AVAILABLE:
+                            micro_response = micro_value_injector.get_micro_value(
+                                service_match.service, 
+                                service_match.industry_hint or 'general'
+                            )
+                            await self.send_response_with_ux(micro_response)
+                            self.conversation_log.append({
+                                'turn': len(self.conversation_log) + 1,
+                                'type': 'assistant_message',
+                                'content': micro_response,
+                                'timestamp': datetime.now().isoformat()
+                            })
+                            return micro_response
             
             # 6. DETECCIÓN DE CONFIRMACIÓN DE AGENDAMIENTO
             confirmation_keywords = ['si', 'sí', 'yes', 'agendemos', 'dale', 'ok', 'claro', 'perfecto', 'genial']
@@ -214,14 +235,48 @@ class TDXWhatsAppBot:
                     })
                     return qualification_question
             
-            # 8. FLUJO OPENAI OPTIMIZADO
+            # 8. PREVENIR CAÍDA A OPENAI SI YA HAY SERVICIO DETECTADO
+            detected_service = self.prospect_info.get('detected_service')
+            if detected_service:
+                # Si ya hay servicio detectado, dar información adicional o proceder con calificación
+                info_request_keywords = ['más información', 'dame información', 'información', 
+                                       'detalles', 'dime más', 'explícame', 'como funciona', 'solo quiero']
+                is_info_request = any(keyword in message_content.lower() for keyword in info_request_keywords)
+                
+                if is_info_request:
+                    detailed_info = self._get_service_detailed_info(detected_service)
+                    await self.send_response_with_ux(detailed_info)
+                    self.conversation_log.append({
+                        'turn': len(self.conversation_log) + 1,
+                        'type': 'assistant_message',
+                        'content': detailed_info,
+                        'timestamp': datetime.now().isoformat()
+                    })
+                    return detailed_info
+                else:
+                    # Proceder con calificación si tiene servicio pero no está calificado
+                    if not self.prospect_info.get('qualified'):
+                        qualification_question = self._get_empathetic_qualification_question()
+                        await self.send_response_with_ux(qualification_question)
+                        self.conversation_log.append({
+                            'turn': len(self.conversation_log) + 1,
+                            'type': 'assistant_message',
+                            'content': qualification_question,
+                            'timestamp': datetime.now().isoformat()
+                        })
+                        return qualification_question
+
+            # 9. FLUJO OPENAI OPTIMIZADO (SOLO COMO ÚLTIMO RECURSO)
+            logger.warning(f"⚠️ Falling back to OpenAI flow for: {message_content[:50]}...")
+            logger.warning(f"Service detected: {self.prospect_info.get('detected_service')}")
+            logger.warning(f"SERVICE_MAPPER_AVAILABLE: {SERVICE_MAPPER_AVAILABLE}")
             response = await self.generate_contextual_response(message_content)
             
-            # 9. VERIFICAR LONGITUD ULTRA CORTA (200 chars max)
+            # 10. VERIFICAR LONGITUD ULTRA CORTA (200 chars max)
             if len(response) > 200:
                 response = response[:190] + "..."
             
-            # 10. ANTI-LOOPS GUARD
+            # 11. ANTI-LOOPS GUARD
             if CONVERSATION_GUARD_AVAILABLE:
                 response = conversation_guard.check_for_loops(response, str(self.conversation_id), self.conversation_log)
             
@@ -261,6 +316,54 @@ class TDXWhatsAppBot:
         }
         
         return qualification_questions.get(detected_service, f"¡Perfecto {self.contact_name}! ¿Cuál es tu mayor reto en {company_name}?")
+    
+    def _get_service_detailed_info(self, service: str) -> str:
+        """Información detallada por servicio cuando el usuario la solicita específicamente"""
+        service_info = {
+            'AI_CHATBOT': """🤖 **AI Chatbot TDX:**
+
+✅ **¿Qué hace?** Atiende clientes 24/7 automáticamente
+✅ **Beneficios:** Reduce 70% tiempo respuesta, 40% más ventas
+✅ **Casos reales:** Clínicas agenda citas, ecommerce responde productos, educación resuelve dudas
+
+¿Para cuántos usuarios lo necesitarías? 😊""",
+
+            'AI_VOICE': """📞 **AI Voice TDX:**
+
+✅ **¿Qué hace?** Llamadas automáticas para ventas y soporte  
+✅ **Beneficios:** 60% mejor conversión, recupera 80% cartera
+✅ **Casos reales:** Fintech cobra automático, salud confirma citas, ventas prospección
+
+¿Para ventas o soporte lo necesitas? 📈""",
+
+            'AI_VIDEO': """🎥 **AI Video TDX:**
+
+✅ **¿Qué hace?** Videos personalizados con avatares realistas
+✅ **Beneficios:** Onboarding automático, explicaciones 24/7  
+✅ **Casos reales:** Empresas entrenan empleados, salud explica procedimientos
+
+¿Para onboarding o marketing lo usarías? 🎯""",
+
+            'AI_ASSISTANT_WHATSAPP': """💬 **AI Assistant WhatsApp TDX:**
+
+✅ **¿Qué hace?** Automatiza 95% mensajes WhatsApp
+✅ **Beneficios:** Tracking automático, respuestas instantáneas
+✅ **Casos reales:** Delivery confirma pedidos, inmobiliaria sigue leads
+
+¿Cuántos mensajes WhatsApp reciben al día? 📱""",
+
+            'AI_GENERAL': """🤖 **Servicios IA TDX:**
+
+1️⃣ **AI Chatbot** - Atención cliente 24/7
+2️⃣ **AI Voice** - Llamadas automáticas  
+3️⃣ **AI Video** - Avatares personalizados
+4️⃣ **AI Assistant** - WhatsApp automático
+5️⃣ **Desarrollo Custom** - IA a medida
+
+¿Cuál te interesa más? 🚀"""
+        }
+        
+        return service_info.get(service, f"IA increíble para automatizar procesos. ¿Qué necesitas automatizar? 🤖")
     
     def _detect_price_inquiry(self, message: str) -> bool:
         """Detectar consultas sobre precios - fallback si intent_classifier no está disponible"""
