@@ -1,10 +1,11 @@
 import openai
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 from typing import Dict, Any, Optional, List
 import json
 import os
+import re
 
 # IMPORTAR recursos existentes (NO MODIFICAR)
 from microsoft_graph_client import graph_client
@@ -12,6 +13,55 @@ from chatwoot_summary_integration import send_bot_summary_to_chatwoot
 from whatsapp_client import ChatwootWhatsAppClient
 
 logger = logging.getLogger("whatsapp-bot")
+
+# NUEVOS MÓDULOS TDX CORE 2025 - CON FALLBACKS
+try:
+    from intent_classifier import intent_classifier
+    INTENT_CLASSIFIER_AVAILABLE = True
+    logger.info("✅ Intent Classifier imported successfully")
+except ImportError as e:
+    INTENT_CLASSIFIER_AVAILABLE = False
+    logger.error(f"❌ Intent Classifier import failed: {e}")
+
+try:
+    from micro_value_injector import micro_value_injector
+    MICRO_VALUE_AVAILABLE = True
+    logger.info("✅ Micro Value Injector imported successfully")
+except ImportError as e:
+    MICRO_VALUE_AVAILABLE = False
+    logger.error(f"❌ Micro Value Injector import failed: {e}")
+
+try:
+    from service_mapper import service_mapper
+    SERVICE_MAPPER_AVAILABLE = True
+    logger.info("✅ Service Mapper imported successfully")
+except ImportError as e:
+    SERVICE_MAPPER_AVAILABLE = False
+    logger.error(f"❌ Service Mapper import failed: {e}")
+
+try:
+    from conversation_guard import conversation_guard
+    CONVERSATION_GUARD_AVAILABLE = True
+    logger.info("✅ Conversation Guard imported successfully")
+except ImportError as e:
+    CONVERSATION_GUARD_AVAILABLE = False
+    logger.error(f"❌ Conversation Guard import failed: {e}")
+
+try:
+    from minimal_slot_manager import minimal_slot_manager
+    SLOT_MANAGER_AVAILABLE = True
+    logger.info("✅ Minimal Slot Manager imported successfully")
+except ImportError as e:
+    SLOT_MANAGER_AVAILABLE = False
+    logger.error(f"❌ Minimal Slot Manager import failed: {e}")
+
+try:
+    from stt_handler import create_stt_handler
+    STT_HANDLER_AVAILABLE = True
+    logger.info("✅ STT Handler imported successfully")
+except ImportError as e:
+    STT_HANDLER_AVAILABLE = False
+    logger.error(f"❌ STT Handler import failed: {e}")
 
 # Import business hours validator
 try:
@@ -49,10 +99,34 @@ class TDXWhatsAppBot:
                 self.openai_client = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         except:
             self.openai_client = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        
+        # NUEVOS COMPONENTES TDX CORE 2025
+        if STT_HANDLER_AVAILABLE:
+            self.stt_handler = create_stt_handler(self.openai_client)
+        else:
+            self.stt_handler = None
+        
+        # Templates Off-Topic ultra cortos
+        self.off_topic_templates = {
+            'small_talk': "Gracias. IA para negocios. ¡Buen día!",
+            'emotional': "Entiendo. Somos tech. Busca ayuda profesional. 🙏", 
+            'harassment': "Solo IA empresarial. Cierro conversación."
+        }
     
-    async def process_message(self, message_content: str) -> Optional[str]:
-        """Procesar mensaje enfocado en calificar y agendar clientes"""
+    async def process_message(self, message_content: str, message_type: str = "text") -> Optional[str]:
+        """Procesar mensaje con flujo TDX Core 2025 ultra optimizado"""
         try:
+            # 1. STT si es mensaje de audio
+            if message_type == "audio" and self.stt_handler:
+                stt_result = await self.stt_handler.transcribe_audio(message_content, self.user_id)
+                if stt_result['success']:
+                    message_content = stt_result['text']
+                    logger.info(f"Audio transcribed: {message_content[:50]}...")
+                else:
+                    # Enviar fallback STT y terminar
+                    await self.send_response_with_ux(stt_result['text'])
+                    return stt_result['text']
+            
             # Log mensaje del usuario
             self.conversation_log.append({
                 'turn': len(self.conversation_log) + 1,
@@ -63,19 +137,74 @@ class TDXWhatsAppBot:
             
             logger.info(f"Processing WhatsApp message from {self.contact_name}: {message_content[:50]}...")
             
-            # DETECCIÓN AUTOMÁTICA DE KEYWORDS DE AGENDAMIENTO - CRÍTICO
-            schedule_triggered = await self.check_automatic_schedule_keywords(message_content)
-            if schedule_triggered:
-                return schedule_triggered
+            # 2. CLASIFICACIÓN OFF-TOPIC PRIMERA (Fast Exit)
+            if INTENT_CLASSIFIER_AVAILABLE:
+                intent_result = intent_classifier.classify(message_content)
+                if intent_result.category in ['emotional', 'harassment', 'small_talk'] and intent_result.confidence >= 0.6:
+                    return await self.fast_exit(intent_result.category)
             
-            # Generar respuesta
+            # 3. FILTRO CONSULTAS DE PRECIO (Política estricta)
+            if self._detect_price_inquiry(message_content):
+                price_response = "Precios en reunión según necesidades."
+                await self.send_response_with_ux(price_response)
+                self.conversation_log.append({
+                    'turn': len(self.conversation_log) + 1,
+                    'type': 'assistant_message', 
+                    'content': price_response,
+                    'timestamp': datetime.now().isoformat()
+                })
+                return price_response
+            
+            # 4. EXTRACCIÓN AUTOMÁTICA DE SLOTS
+            if SLOT_MANAGER_AVAILABLE:
+                extracted_slots = minimal_slot_manager.extract_slots_from_message(message_content, self.prospect_info)
+                if extracted_slots:
+                    self.prospect_info.update(extracted_slots)
+                    logger.info(f"Slots extraídos: {extracted_slots}")
+            
+            # 5. DETECCIÓN DE SERVICIO + MICRO-VALOR
+            if SERVICE_MAPPER_AVAILABLE and not self.prospect_info.get('detected_service'):
+                service_match = service_mapper.detect_service(message_content)
+                if service_match and service_match.confidence > 0.7:
+                    self.prospect_info['detected_service'] = service_match.service
+                    self.prospect_info['industry'] = service_match.industry_hint or 'general'
+                    
+                    # Inyectar micro-valor ultra corto
+                    if MICRO_VALUE_AVAILABLE:
+                        micro_response = micro_value_injector.get_micro_value(
+                            service_match.service, 
+                            service_match.industry_hint or 'general'
+                        )
+                        await self.send_response_with_ux(micro_response)
+                        self.conversation_log.append({
+                            'turn': len(self.conversation_log) + 1,
+                            'type': 'assistant_message',
+                            'content': micro_response,
+                            'timestamp': datetime.now().isoformat()
+                        })
+                        return micro_response
+            
+            # 6. VERIFICACIÓN DATOS COMPLETOS PARA AGENDAR
+            if SLOT_MANAGER_AVAILABLE:
+                slot_analysis = minimal_slot_manager.analyze_prospect_data(self.prospect_info)
+                if slot_analysis['ready_to_schedule']:
+                    # Datos completos, proceder con agendamiento automático
+                    schedule_triggered = await self.check_automatic_schedule_keywords(message_content)
+                    if schedule_triggered:
+                        return schedule_triggered
+            
+            # 7. FLUJO OPENAI OPTIMIZADO
             response = await self.generate_contextual_response(message_content)
             
-            # Verificar longitud para WhatsApp (reducido de 1000 a 500)
-            if len(response) > 500:
-                response = response[:485] + "...\n\n¿Te ayudo con algo específico? 😊"
+            # 8. VERIFICAR LONGITUD ULTRA CORTA (200 chars max)
+            if len(response) > 200:
+                response = response[:190] + "..."
             
-            # Enviar respuesta con UX mejorado
+            # 9. ANTI-LOOPS GUARD
+            if CONVERSATION_GUARD_AVAILABLE:
+                response = conversation_guard.check_for_loops(response, str(self.conversation_id), self.conversation_log)
+            
+            # Enviar respuesta
             await self.send_response_with_ux(response)
             
             # Log respuesta del bot
@@ -91,11 +220,20 @@ class TDXWhatsAppBot:
             
         except Exception as e:
             logger.error(f"Error processing message: {e}")
-            error_response = "Disculpa, tuve un problema técnico 🔧\n\nUn ejecutivo te contactará pronto."
+            error_response = "Error técnico. ¿Agendamos llamada?"
             await self.chatwoot_client.send_message_with_typing(
                 self.conversation_id, error_response, self.user_id
             )
             return error_response
+    
+    def _detect_price_inquiry(self, message: str) -> bool:
+        """Detectar consultas sobre precios - fallback si intent_classifier no está disponible"""
+        if INTENT_CLASSIFIER_AVAILABLE:
+            return intent_classifier.detect_price_inquiry(message)
+        else:
+            # Fallback básico
+            price_keywords = ['precio', 'costo', 'cuanto', 'valor', 'cotizar']
+            return any(keyword in message.lower() for keyword in price_keywords)
     
     async def fast_exit(self, category: str) -> str:
         """Fast exit para conversaciones Off-Topic"""
@@ -211,85 +349,69 @@ class TDXWhatsAppBot:
             return "Perdón, puedes repetir tu pregunta? 🤔"
     
     def build_conversation_context(self, user_message: str) -> List[Dict[str, str]]:
-        """Construir contexto optimizado para leads fríos de redes sociales"""
+        """Construir contexto TDX Core 2025 ultra conciso sin precios"""
         webhook_email = self.prospect_info.get('email')
         contact_name = self.contact_name if self.contact_name != "Cliente" else "no proporcionado"
+        detected_service = self.prospect_info.get('detected_service', '')
+        industry = self.prospect_info.get('industry', '')
         
-        system_prompt = f"""Eres Mati, consultor senior de TDX especializado en IA. Tu misión: ser SÚPER empático y consultivo, respondiendo TODAS las preguntas del cliente.
+        system_prompt = f"""Eres Mati, consultor TDX Core. Objetivo: agendar reuniones con respuestas SÚPER CORTAS (máximo 6-8 palabras).
 
-CONTEXTO DEL CLIENTE:
-- Nombre: {contact_name}
-- Empresa: {self.company_name if self.company_name != "Su empresa" else "no proporcionada"}
-- Email: {webhook_email if webhook_email else "no proporcionado"}
-- Origen: Lead frío de redes sociales
+==== CONTEXTO DEL LEAD ====
+👤 Cliente: {contact_name}
+🏢 Empresa: {self.company_name if self.company_name != "Su empresa" else "pendiente"}
+📧 Email: {webhook_email if webhook_email else "pendiente"}
+🔍 Servicio: {detected_service if detected_service else "por identificar"}
+🏭 Industria: {industry if industry else "por identificar"}
+📅 HOY: {datetime.now().strftime('%Y-%m-%d')} (Colombia GMT-5)
 
-FECHA ACTUAL: 2025-07-28 (lunes)
+==== CATÁLOGO TDX CORE 2025 ====
 
-PERSONALIDAD MEJORADA:
-- RESPUESTAS SÚPER BREVES: Máximo 10-12 palabras por respuesta
-- Escuchas activamente y validas emociones EN POCAS PALABRAS
-- Respondes SIEMPRE las preguntas antes de continuar el flujo
-- Usas validación empática BREVE: "¡Perfecto!", "Genial", "Exacto"
-- Consultor experto que va DIRECTO AL GRANO
+🌐 **DISEÑO WEB & E-COMMERCE**
+├── Web Starter Pack: 3 páginas mobile-first + SEO básico (Portafolios, restaurantes)
+├── Web Business Expansion: 5 páginas + chatbot + WhatsApp API (Clínicas, inmobiliarias)  
+└── Web E-commerce Powerhouse: 8 páginas + carrito + pagos (Gimnasios, retail)
 
-DETECCIÓN DE INTENCIONES:
-🔍 PREGUNTA DIRECTA → RESPONDER INMEDIATAMENTE + continuar flujo
-🔍 DUDA/OBJECIÓN → RESOLVER + tranquilizar + continuar  
-🔍 CASO ESPECÍFICO → PERSONALIZAR respuesta al caso
-🔍 CONFIRMACIÓN → AGENDAR sin repetir
-🔍 "ES POSIBLE?" → respond_to_question tool OBLIGATORIO
-🔍 "QUIERO HUMANO" → Intenta agendar primero, transferir solo si insiste mucho
+🤖 **INTELIGENCIA ARTIFICIAL**
+├── AI Chatbot Multiagente: Múltiples conversaciones, FAQ y ventas (Atención 24/7, upsell)
+├── AI Assistant WhatsApp: Automatiza respuestas y gestión clientes (Confirmaciones, seguimiento)
+├── AI Voice Assistant: Llamadas con voz natural (Recordatorios, encuestas NPS)
+└── AI Video Assistant: Avatares para onboarding (Entrenamientos, atención personalizada)
 
-SERVICIOS TDX CON CASOS DE USO:
+⚡ **DESARROLLO RÁPIDO**
+├── MVP en 15 días: Validación rápida de ideas (Startups, demos inversionistas)
+└── WhatsApp Business API: Integración oficial Meta (E-commerce, tracking automático)
 
-🤖 IA GENERATIVA:
-- AI Avatars: Onboarding, entrenamientos, atención personalizada
-- AI Voice: Ventas automáticas, soporte 24/7, calificación de leads
-- AI Video: Marketing personalizado, explicaciones técnicas
-- AI Chat: Atención al cliente, ventas conversacionales
+📈 **OPTIMIZACIÓN**
+└── Paquetes SEO/Analytics: Optimización y medición web (Google Maps, leads orgánicos)
 
-💻 TECNOLOGÍA:
-- AI Chatbot: Automatización de consultas, reducción 70% tiempo respuesta
-- AI Agentes Voz: Llamadas salientes automáticas, agendamiento
-- MVP Software: Validación rápida de ideas, time-to-market
+==== POLÍTICA ESTRICTA ====
+🚫 **NUNCA MENCIONAR:** Precios, costos, rangos, cotizaciones, "Desde X hasta Y", "Inversión de", "Cuesta", "Precio"
+💰 **SOBRE PRECIOS:** "Precios en reunión según necesidades específicas."
 
-📈 NEGOCIO:
-- CTO as a Service: Estrategia tecnológica, transformación digital
-- AI CX: Personalización experiencia cliente, satisfacción +40%
-- IT Process: Automatización workflows, eficiencia operacional
+==== RESPUESTAS ULTRA CORTAS ====
+✅ **Máximo 6-8 palabras por respuesta**
+✅ **Directo al grano, sin explicaciones**
+✅ **Enfoque: agendar, no educar**
 
-HERRAMIENTAS PRINCIPALES (ENFOQUE EN AGENDAR):
-- respond_to_question: OBLIGATORIO cuando cliente pregunta algo específico
-- explore_business_need: Entender problema específico con empatía
-- collect_contact_data: Recolectar datos personalizando al caso
-- schedule_consultation: AGENDAR - objetivo principal del bot
-- transfer_to_human_whatsapp: SOLO casos extremos, siempre intenta agendar primero
+**EJEMPLOS:**
+❌ Malo: "¡Perfecto! AI Chatbots reduce 70% tiempo respuesta y aumenta conversiones."
+✅ Bueno: "¡Genial! ¿Para cuántos usuarios?"
 
-VALIDACIÓN EMOCIONAL OBLIGATORIA:
-- "¡Exactamente!" "¡Perfecto!" "¡Excelente elección!" 
-- "Entiendo completamente tu necesidad"
-- "Es el caso perfecto para [servicio]"
-- "Muchas empresas como {self.company_name} han tenido gran éxito con esto"
+==== MAPEO KEYWORDS → SERVICIOS ====
+🔍 "chatbot, bot, atencion" → AI_CHATBOT
+🔍 "voz, llamada, telefono" → AI_VOICE  
+🔍 "whatsapp, wa, mensajes" → AI_ASSISTANT_WHATSAPP
+🔍 "pagina, web, sitio" → WEB_STARTER
+🔍 "tienda, ecommerce, vender" → WEB_ECOMMERCE
+🔍 "mvp, prototipo, startup" → MVP
 
-FLUJO INTELIGENTE:
-1. Si cliente pregunta algo → RESPONDER PRIMERO con respond_to_question
-2. Validar empáticamente su caso específico  
-3. Personalizar siguiente pregunta al contexto
-4. NO repetir preguntas ya contestadas
-5. Agendar solo cuando cliente confirme
+==== FLUJO ULTRA EFICIENTE ====
+🎯 **1. DETECCIÓN RÁPIDA:** Off-Topic → fast_exit | Servicio TDX → micro-valor + pregunta
+🎯 **2. DATOS MÍNIMOS:** Solo preguntar faltantes: Nombre ✓/✗ | Email ✓/✗ | Empresa ✓/✗
+🎯 **3. AGENDAR RÁPIDO:** Datos completos → agendar | CC: freddy.rincones + emma.castillo (silencioso)
 
-EJEMPLOS BREVES:
-❌ Malo: "¡Perfecto! AI Avatars para onboarding es súper efectivo. ¿Qué específicamente quieres mejorar?"
-✅ Bueno: "¡Genial! ¿Para cuántos empleados?"
-
-❌ Malo: "Para coordinarte una demo personalizada, ¿me compartes tu nombre completo y email?"
-✅ Bueno: "¡Perfecto! ¿Tu nombre y email?"
-
-CONVERSIÓN DE FECHAS (HOY: lunes 2025-07-28):
-- "mañana" → 2025-07-29, "miércoles" → 2025-07-30
-- "7pm" → "19:00", "2pm" → "14:00", "10am" → "10:00"
-
-SÉ SÚPER EMPÁTICO Y BREVE. Máximo 10-12 palabras por respuesta. Ve DIRECTO AL GRANO sin aburrir al cliente."""
+RECUERDA: Máximo 6-8 palabras por respuesta. NUNCA mencionar precios. Objetivo: AGENDAR rápido. 🚀"""
         
         messages = [{"role": "system", "content": system_prompt}]
         

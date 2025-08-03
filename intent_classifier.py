@@ -151,92 +151,128 @@ class IntentClassifier:
     
     def classify(self, text: str) -> IntentResult:
         """Clasificar intención del mensaje"""
-        text_lower = text.lower()
-        
-        # 1. Verificar Off-Topic primero
-        off_topic_result = self._check_off_topic(text_lower)
-        if off_topic_result['is_off_topic']:
+        try:
+            if not text or not text.strip():
+                logger.warning("Empty text provided for classification")
+                return IntentResult(
+                    category='tdx_service',
+                    confidence=0.5,
+                    detected_service=None,
+                    industry='general'
+                )
+            
+            text_lower = text.lower().strip()
+            
+            # 1. Verificar Off-Topic primero
+            off_topic_result = self._check_off_topic(text_lower)
+            if off_topic_result['is_off_topic']:
+                return IntentResult(
+                    category=off_topic_result['category'],
+                    confidence=off_topic_result['confidence']
+                )
+            
+            # 2. Detectar servicio TDX
+            service_detection = self._detect_service(text_lower)
+            
+            # 3. Detectar industria
+            industry_detection = self._detect_industry(text_lower)
+            
             return IntentResult(
-                category=off_topic_result['category'],
-                confidence=off_topic_result['confidence']
+                category='tdx_service',
+                confidence=service_detection['confidence'],
+                detected_service=service_detection['service'],
+                industry=industry_detection['industry'],
+                signals=service_detection['signals']
             )
-        
-        # 2. Detectar servicio TDX
-        service_detection = self._detect_service(text_lower)
-        
-        # 3. Detectar industria
-        industry_detection = self._detect_industry(text_lower)
-        
-        return IntentResult(
-            category='tdx_service',
-            confidence=service_detection['confidence'],
-            detected_service=service_detection['service'],
-            industry=industry_detection['industry'],
-            signals=service_detection['signals']
-        )
+        except Exception as e:
+            logger.error(f"Error classifying intent: {e}")
+            # Fallback seguro
+            return IntentResult(
+                category='tdx_service',
+                confidence=0.5,
+                detected_service=None,
+                industry='general',
+                signals=[]
+            )
     
     def _check_off_topic(self, text: str) -> Dict[str, Any]:
         """Verificar si el mensaje es Off-Topic"""
-        for category, patterns in self.off_topic_patterns.items():
-            matches = 0
-            for pattern in patterns:
-                if pattern in text:
-                    matches += 1
+        try:
+            for category, patterns in self.off_topic_patterns.items():
+                matches = 0
+                for pattern in patterns:
+                    if pattern in text:
+                        matches += 1
+                
+                if matches > 0:
+                    confidence = min(0.9, matches * 0.3)  # Max 0.9 confidence
+                    return {
+                        'is_off_topic': True,
+                        'category': category,
+                        'confidence': confidence
+                    }
             
-            if matches > 0:
-                confidence = min(0.9, matches * 0.3)  # Max 0.9 confidence
-                return {
-                    'is_off_topic': True,
-                    'category': category,
-                    'confidence': confidence
-                }
-        
-        return {'is_off_topic': False, 'category': None, 'confidence': 0.0}
+            return {'is_off_topic': False, 'category': None, 'confidence': 0.0}
+        except Exception as e:
+            logger.error(f"Error checking off-topic: {e}")
+            return {'is_off_topic': False, 'category': None, 'confidence': 0.0}
     
     def _detect_service(self, text: str) -> Dict[str, Any]:
         """Detectar servicio TDX mencionado"""
-        best_match = {'service': None, 'confidence': 0.0, 'signals': []}
-        
-        for service, keywords in self.service_keywords.items():
-            matches = []
-            for keyword in keywords:
-                if keyword in text:
-                    matches.append(keyword)
+        try:
+            best_match = {'service': None, 'confidence': 0.0, 'signals': []}
             
-            if matches:
-                confidence = min(0.95, len(matches) * 0.2)
-                if confidence > best_match['confidence']:
-                    best_match = {
-                        'service': service,
-                        'confidence': confidence,
-                        'signals': matches
-                    }
-        
-        return best_match
+            for service, keywords in self.service_keywords.items():
+                matches = []
+                for keyword in keywords:
+                    if keyword in text:
+                        matches.append(keyword)
+                
+                if matches:
+                    confidence = min(0.95, len(matches) * 0.2)
+                    if confidence > best_match['confidence']:
+                        best_match = {
+                            'service': service,
+                            'confidence': confidence,
+                            'signals': matches
+                        }
+            
+            return best_match
+        except Exception as e:
+            logger.error(f"Error detecting service: {e}")
+            return {'service': None, 'confidence': 0.0, 'signals': []}
     
     def _detect_industry(self, text: str) -> Dict[str, Any]:
         """Detectar industria del cliente"""
-        for industry, keywords in self.industry_keywords.items():
-            for keyword in keywords:
-                if keyword in text:
-                    return {
-                        'industry': industry,
-                        'confidence': 0.8,
-                        'keyword': keyword
-                    }
-        
-        return {'industry': 'general', 'confidence': 0.5, 'keyword': None}
+        try:
+            for industry, keywords in self.industry_keywords.items():
+                for keyword in keywords:
+                    if keyword in text:
+                        return {
+                            'industry': industry,
+                            'confidence': 0.8,
+                            'keyword': keyword
+                        }
+            
+            return {'industry': 'general', 'confidence': 0.5, 'keyword': None}
+        except Exception as e:
+            logger.error(f"Error detecting industry: {e}")
+            return {'industry': 'general', 'confidence': 0.5, 'keyword': None}
     
     def detect_price_inquiry(self, text: str) -> bool:
         """Detectar consultas sobre precios"""
-        price_keywords = [
-            'precio', 'costo', 'cuanto cuesta', 'valor', 'cotizar',
-            'cotizacion', 'presupuesto', 'inversion', 'tarifa',
-            'cuanto vale', 'que vale', 'cuanto es', 'precio de'
-        ]
-        
-        text_lower = text.lower()
-        return any(keyword in text_lower for keyword in price_keywords)
+        try:
+            price_keywords = [
+                'precio', 'costo', 'cuanto cuesta', 'valor', 'cotizar',
+                'cotizacion', 'presupuesto', 'inversion', 'tarifa',
+                'cuanto vale', 'que vale', 'cuanto es', 'precio de'
+            ]
+            
+            text_lower = text.lower()
+            return any(keyword in text_lower for keyword in price_keywords)
+        except Exception as e:
+            logger.error(f"Error detecting price inquiry: {e}")
+            return False
 
 # Instancia global
 intent_classifier = IntentClassifier()
