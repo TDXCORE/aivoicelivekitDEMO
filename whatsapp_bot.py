@@ -163,9 +163,10 @@ class TDXWhatsAppBot:
                     logger.info(f"Slots extraídos: {extracted_slots}")
             
             # 5. DETECCIÓN DE SERVICIO + MICRO-VALOR
-            if SERVICE_MAPPER_AVAILABLE and not self.prospect_info.get('detected_service'):
+            if SERVICE_MAPPER_AVAILABLE:
                 service_match = service_mapper.detect_service(message_content)
                 if service_match and service_match.confidence > 0.7:
+                    # Actualizar siempre para permitir cambios de servicio
                     self.prospect_info['detected_service'] = service_match.service
                     self.prospect_info['industry'] = service_match.industry_hint or 'general'
                     

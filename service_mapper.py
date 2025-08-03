@@ -29,6 +29,20 @@ class ServiceMapper:
     def _load_service_keywords(self) -> Dict[str, Dict[str, List[str]]]:
         """Keywords organizados por servicio y nivel de especificidad"""
         return {
+            'AI_GENERAL': {
+                'high': [  # Alta especificidad - Consultas generales sobre IA
+                    'inteligencia artificial', 'artificial intelligence', 'ia', 'ai',
+                    'soluciones ia', 'servicios ia', 'tecnologia ia', 'ai solutions',
+                    'que es ia', 'como funciona ia', 'usos ia'
+                ],
+                'medium': [  # Media especificidad
+                    'inteligente', 'automatizacion', 'machine learning', 'ml',
+                    'algoritmos', 'smart', 'artificial', 'automated'
+                ],
+                'low': [  # Baja especificidad
+                    'tecnologia', 'innovation', 'digital', 'moderno'
+                ]
+            },
             'AI_CHATBOT': {
                 'high': [  # Alta especificidad
                     'chatbot multiagente', 'bot conversacional', 'ai chatbot',

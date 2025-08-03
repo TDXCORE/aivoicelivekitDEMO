@@ -20,6 +20,14 @@ class MicroValueInjector:
     def _load_responses(self) -> Dict[str, Dict[str, str]]:
         """Cargar respuestas ultra cortas por servicio e industria"""
         return {
+            'AI_GENERAL': {
+                'general': "¡Tenemos 5 servicios IA! ¿Cuál interesa?",
+                'salud': "¡IA para salud! Automatización completa. ¿Qué necesitas?",
+                'ecommerce': "¡IA comercial! 50% más ventas. ¿Tu necesidad?",
+                'educacion': "¡IA educativa! 24/7 disponible. ¿Para qué?",
+                'fintech': "¡IA financiera! Automatiza procesos. ¿Cuál?",
+                'startup': "¡IA startup! Acelera crecimiento. ¿Tu reto?"
+            },
             'AI_CHATBOT': {
                 'general': "¡Perfecto! Reduce 70% tiempo. ¿Cuántos usuarios?",
                 'salud': "¡Ideal! Agenda automático. ¿Cuántos pacientes?",
@@ -114,6 +122,14 @@ class MicroValueInjector:
     def get_follow_up_question(self, service: str, industry: str = 'general') -> str:
         """Generar pregunta de seguimiento específica"""
         follow_ups = {
+            'AI_GENERAL': {
+                'general': "¿Cuál interesa?",
+                'salud': "¿Qué necesitas?",
+                'ecommerce': "¿Tu necesidad?",
+                'educacion': "¿Para qué?",
+                'fintech': "¿Cuál proceso?",
+                'startup': "¿Tu reto?"
+            },
             'AI_CHATBOT': {
                 'general': "¿Cuántos usuarios?",
                 'salud': "¿Cuántos pacientes?",
