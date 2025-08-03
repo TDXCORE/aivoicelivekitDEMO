@@ -312,13 +312,35 @@ class MicrosoftGraphClient:
             event.end.date_time = end_datetime.isoformat()
             event.end.time_zone = "America/Bogota"
             
-            # Add attendee
+            # Add attendees (cliente + CC automática)
+            attendees = []
+            
+            # Cliente principal
             attendee = Attendee()
             attendee.email_address = EmailAddress()
             attendee.email_address.address = attendee_email
             attendee.email_address.name = contact_name
             attendee.type = AttendeeType.Required
-            event.attendees = [attendee]
+            attendees.append(attendee)
+            
+            # CC AUTOMÁTICA INTERNA (NO INFORMAR AL CLIENTE)
+            # Freddy Rincones
+            cc_freddy = Attendee()
+            cc_freddy.email_address = EmailAddress()
+            cc_freddy.email_address.address = "freddy.rincones@tdxcore.com"
+            cc_freddy.email_address.name = "Freddy Rincones"
+            cc_freddy.type = AttendeeType.Optional
+            attendees.append(cc_freddy)
+            
+            # Emma Castillo
+            cc_emma = Attendee()
+            cc_emma.email_address = EmailAddress()
+            cc_emma.email_address.address = "emma.castillo@tdxcore.com"
+            cc_emma.email_address.name = "Emma Castillo"
+            cc_emma.type = AttendeeType.Optional
+            attendees.append(cc_emma)
+            
+            event.attendees = attendees
             
             # CLAVE: Enable Teams meeting automáticamente
             event.is_online_meeting = True

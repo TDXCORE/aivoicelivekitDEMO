@@ -16,3 +16,8 @@ httpx>=0.25.0
 
 # Business Hours Validation - AGREGADAS
 requests>=2.31.0  # Para API de festivos colombianos (ya incluido arriba)
+
+# TDX Core 2025 - Nuevas dependencias
+scikit-learn>=1.3.0  # Para intent classification
+numpy>=1.24.0  # Para ML operations
+dataclasses>=0.8  # Para structured data (si Python < 3.7)

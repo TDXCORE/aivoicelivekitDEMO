@@ -1,0 +1,250 @@
+{
+  "AI_CHATBOT": {
+    "general": {
+      "snippet": "¡Perfecto! Reduce 70% tiempo respuesta. ¿Cuántos usuarios?",
+      "roi": "70% menos tiempo, 40% más conversiones",
+      "use_cases": ["Atención 24/7", "FAQ automático", "Calificación leads", "Upsell automático"],
+      "industries": ["general", "salud", "ecommerce", "educacion"]
+    },
+    "salud": {
+      "snippet": "¡Ideal! Agenda citas automáticamente. ¿Cuántos pacientes?",
+      "roi": "3x más agendamiento, 80% menos cancelaciones",
+      "use_cases": ["Agendamiento citas", "Recordatorios", "FAQ médicas", "Seguimiento pacientes"],
+      "examples": ["Clínica dental", "Centro médico", "Veterinaria", "Laboratorio"]
+    },
+    "ecommerce": {
+      "snippet": "¡Genial! 40% más ventas automáticas. ¿Cuántos productos?",
+      "roi": "40% más ventas, 60% menos carritos abandonados",
+      "use_cases": ["Recomendaciones productos", "Soporte postventa", "Tracking pedidos", "Recuperación carrito"],
+      "examples": ["Tienda online", "Marketplace", "Retail", "Catálogo digital"]
+    },
+    "educacion": {
+      "snippet": "¡Perfecto! Resuelve dudas 24/7. ¿Cuántos estudiantes?",
+      "roi": "50% mejor retención, 80% menos consultas repetitivas",
+      "use_cases": ["FAQ académicas", "Soporte técnico", "Seguimiento progreso", "Inscripciones automáticas"],
+      "examples": ["Universidad", "Academia", "Colegio", "Cursos online"]
+    },
+    "inmobiliaria": {
+      "snippet": "¡Ideal! Califica leads automáticamente. ¿Cuántas propiedades?",
+      "roi": "5x más leads calificados, 30% más citas",
+      "use_cases": ["Calificación leads", "Info propiedades", "Agendamiento visitas", "Seguimiento interesados"],
+      "examples": ["Inmobiliaria", "Constructor", "Broker", "Arrendador"]
+    }
+  },
+  "AI_VOICE": {
+    "general": {
+      "snippet": "¡Excelente! 60% mejor conversión. ¿Ventas o soporte?",
+      "roi": "60% mejor que chat, 3x más contactos efectivos",
+      "use_cases": ["Prospección automática", "Calificación BANT", "Agendamiento", "Encuestas NPS"],
+      "industries": ["general", "fintech", "inmobiliaria", "salud"]
+    },
+    "fintech": {
+      "snippet": "¡Perfecto! Recupera 80% más cartera. ¿Cuántos deudores?",
+      "roi": "80% más recuperación, 50% menos tiempo gestión",
+      "use_cases": ["Recordatorios pago", "Negociación automática", "Seguimiento compromisos", "Ofertas refinanciación"],
+      "examples": ["Banco", "Cooperativa", "Fintech", "Prestamista"]
+    },
+    "inmobiliaria": {
+      "snippet": "¡Ideal! Prospección automática 10x. ¿Cuántos leads?",
+      "roi": "10x capacidad prospección, 25% más citas",
+      "use_cases": ["Prospección leads", "Calificación interés", "Agendamiento visitas", "Seguimiento postventa"],
+      "examples": ["Inmobiliaria", "Proyecto nuevo", "Broker independiente"]
+    },
+    "salud": {
+      "snippet": "¡Genial! Recordatorios automáticos. ¿Cuántos pacientes?",
+      "roi": "90% menos no-shows, 70% mejor adherencia",
+      "use_cases": ["Recordatorios citas", "Confirmaciones", "Encuestas satisfacción", "Seguimiento tratamientos"],
+      "examples": ["Clínica", "Hospital", "Consulta privada", "Centro especializado"]
+    },
+    "ecommerce": {
+      "snippet": "¡Perfecto! Ventas telefónicas 10x. ¿Cuántos leads?",
+      "roi": "10x capacidad comercial, 45% conversión telefónica",
+      "use_cases": ["Ventas telefónicas", "Recuperación carritos", "Upselling", "Atención VIP"],
+      "examples": ["E-commerce", "Retail", "B2B sales", "Productos premium"]
+    }
+  },
+  "AI_ASSISTANT_WHATSAPP": {
+    "general": {
+      "snippet": "¡Genial! Automatiza WhatsApp 95%. ¿Para qué?",
+      "roi": "95% automatización, 80% menos tiempo operativo",
+      "use_cases": ["Respuestas automáticas", "Gestión clientes", "Soporte 24/7", "Calificación leads"],
+      "industries": ["general", "ecommerce", "salud", "restaurante"]
+    },
+    "ecommerce": {
+      "snippet": "¡Perfecto! Tracking automático pedidos. ¿Cuántos pedidos?",
+      "roi": "90% menos consultas tracking, 95% satisfacción cliente",
+      "use_cases": ["Confirmación pedidos", "Tracking envíos", "Soporte postventa", "Recomendaciones"],
+      "examples": ["Tienda online", "Delivery", "Marketplace", "Retail"]
+    },
+    "salud": {
+      "snippet": "¡Ideal! Confirmaciones automáticas. ¿Cuántas citas?",
+      "roi": "85% menos no-shows, 70% menos llamadas admin",
+      "use_cases": ["Confirmación citas", "Recordatorios", "Resultados exámenes", "Info servicios"],
+      "examples": ["Clínica", "Laboratorio", "Centro médico", "Consulta especializada"]
+    },
+    "restaurante": {
+      "snippet": "¡Genial! Delivery automático completo. ¿Cuántos pedidos?",
+      "roi": "60% más pedidos, 40% menos tiempo operativo",
+      "use_cases": ["Pedidos automáticos", "Menú interactivo", "Tracking delivery", "Reservas"],
+      "examples": ["Restaurante", "Domicilio", "Fast food", "Café"]
+    }
+  },
+  "AI_VIDEO": {
+    "general": {
+      "snippet": "¡Genial! Avatares súper realistas. ¿Para qué?",
+      "roi": "50% menos tiempo entrenamiento, 80% mejor retención",
+      "use_cases": ["Onboarding empleados", "Capacitaciones", "Atención personalizada", "Marketing"],
+      "industries": ["general", "educacion", "salud", "ecommerce"]
+    },
+    "educacion": {
+      "snippet": "¡Perfecto! Onboarding automático personalizado. ¿Cuántos empleados?",
+      "roi": "70% menos tiempo inducción, 90% comprensión política",
+      "use_cases": ["Inducción empleados", "Políticas empresa", "Procesos", "Cultura organizacional"],
+      "examples": ["Empresa grande", "Multinacional", "Startup crecimiento", "Franquicia"]
+    },
+    "salud": {
+      "snippet": "¡Ideal! Explicaciones personalizadas. ¿Qué procedimientos?",
+      "roi": "60% mejor comprensión paciente, 40% menos consultas aclaratorias",
+      "use_cases": ["Explicación procedimientos", "Consentimientos", "Cuidados post", "Educación salud"],
+      "examples": ["Cirugía", "Tratamientos", "Rehabilitación", "Medicina estética"]
+    },
+    "ecommerce": {
+      "snippet": "¡Genial! Videos productos automáticos. ¿Cuántos productos?",
+      "roi": "35% más conversiones, 50% menos devoluciones",
+      "use_cases": ["Videos producto", "Tutoriales uso", "Unboxing", "Testimoniales"],
+      "examples": ["E-commerce", "Productos técnicos", "Cosmética", "Tecnología"]
+    }
+  },
+  "WEB_STARTER": {
+    "general": {
+      "snippet": "¡Genial! Vitrina digital 24/7. ¿Qué negocio?",
+      "roi": "Presencia digital profesional completa",
+      "use_cases": ["Vitrina digital", "Información empresa", "Contacto directo", "SEO básico"],
+      "industries": ["general", "restaurante", "salud", "profesional"]
+    },
+    "restaurante": {
+      "snippet": "¡Perfecto! Menú digital completo. ¿Cuántas sucursales?",
+      "roi": "40% más visualizaciones menú, 25% más pedidos",
+      "use_cases": ["Menú digital", "Reservas", "Delivery", "Galería platos"],
+      "examples": ["Restaurante local", "Pizzería", "Café", "Comida rápida"]
+    },
+    "salud": {
+      "snippet": "¡Ideal! Servicios médicos online. ¿Qué especialidades?",
+      "roi": "60% más agendamiento online, credibilidad profesional",
+      "use_cases": ["Servicios médicos", "Equipo profesional", "Horarios", "Ubicación"],
+      "examples": ["Consulta médica", "Clínica dental", "Centro estético", "Fisioterapia"]
+    },
+    "profesional": {
+      "snippet": "¡Perfecto! Portafolio profesional. ¿Qué especialidad?",
+      "roi": "3x más credibilidad, 50% más clientes potenciales",
+      "use_cases": ["Portafolio servicios", "Testimonios", "Blog personal", "Contacto directo"],
+      "examples": ["Consultor", "Arquitecto", "Diseñador", "Abogado"]
+    }
+  },
+  "WEB_BUSINESS": {
+    "general": {
+      "snippet": "¡Excelente! Web + chat automático. ¿Qué vendes?",
+      "roi": "5x más leads calificados, 40% mejor conversión",
+      "use_cases": ["Lead generation", "Chat integrado", "Formularios", "CRM básico"],
+      "industries": ["general", "salud", "educacion", "inmobiliaria"]
+    },
+    "salud": {
+      "snippet": "¡Perfecto! Agendamiento + chat médico. ¿Qué especialidades?",
+      "roi": "70% más citas online, 50% menos llamadas admin",
+      "use_cases": ["Agendamiento online", "Chat médico", "Servicios", "Equipo profesional"],
+      "examples": ["Clínica especializada", "Centro médico", "Grupo médico"]
+    },
+    "inmobiliaria": {
+      "snippet": "¡Ideal! Leads automáticos propiedades. ¿Qué zona?",
+      "roi": "8x más leads calificados, 30% más visitas",
+      "use_cases": ["Catálogo propiedades", "Filtros búsqueda", "Chat inmobiliario", "Agendamiento visitas"],
+      "examples": ["Inmobiliaria", "Proyecto nuevo", "Broker"]
+    }
+  },
+  "WEB_ECOMMERCE": {
+    "general": {
+      "snippet": "¡Excelente! Ventas 24/7 automáticas. ¿Cuántos productos?",
+      "roi": "Ventas automáticas 24/7, gestión completa pedidos",
+      "use_cases": ["Catálogo completo", "Carrito compras", "Pagos online", "Gestión envíos"],
+      "industries": ["general", "restaurante", "gimnasio", "retail"]
+    },
+    "restaurante": {
+      "snippet": "¡Perfecto! Delivery completo automático. ¿Qué cocinas?",
+      "roi": "80% más pedidos online, 60% menos errores",
+      "use_cases": ["Menú interactivo", "Pedidos online", "Pagos", "Tracking delivery"],
+      "examples": ["Restaurante delivery", "Comida rápida", "Gourmet", "Postres"]
+    },
+    "gimnasio": {
+      "snippet": "¡Ideal! Membresías online automáticas. ¿Cuántos miembros?",
+      "roi": "90% más inscripciones online, gestión automática",
+      "use_cases": ["Membresías online", "Clases grupales", "Productos fitness", "App móvil"],
+      "examples": ["Gimnasio", "Box CrossFit", "Estudio yoga", "Centro fitness"]
+    },
+    "retail": {
+      "snippet": "¡Genial! Catálogo + pagos automáticos. ¿Qué vendes?",
+      "roi": "5x más ventas online, gestión automática stock",
+      "use_cases": ["Catálogo productos", "Pagos online", "Gestión envíos", "CRM integrado"],
+      "examples": ["Ropa", "Tecnología", "Hogar", "Belleza"]
+    }
+  },
+  "MVP": {
+    "general": {
+      "snippet": "¡Genial! MVP funcional 15 días. ¿Qué idea?",
+      "roi": "90% menos tiempo mercado, validación rápida",
+      "use_cases": ["Prototipo funcional", "Validación mercado", "Demo inversionistas", "Feedback usuarios"],
+      "industries": ["general", "fintech", "startup", "marketplace"]
+    },
+    "fintech": {
+      "snippet": "¡Perfecto! Demo inversionistas listo. ¿Qué problema resuelves?",
+      "roi": "5x más interés inversionistas, validación técnica",
+      "use_cases": ["Demo funcional", "Casos uso", "Métricas básicas", "Escalabilidad"],
+      "examples": ["Pagos digitales", "Préstamos P2P", "Inversiones", "Billeteras digitales"]
+    },
+    "marketplace": {
+      "snippet": "¡Ideal! Conecta compradores-vendedores. ¿Qué mercado?",
+      "roi": "Validación modelo negocio, tracción inicial",
+      "use_cases": ["Plataforma compra/venta", "Sistema reviews", "Pagos escrow", "App móvil"],
+      "examples": ["Marketplace servicios", "B2B", "Productos nicho", "Economía colaborativa"]
+    }
+  },
+  "WHATSAPP_API": {
+    "general": {
+      "snippet": "¡Excelente! API oficial Meta. ¿Para qué?",
+      "roi": "95% automatización compliance, integración total",
+      "use_cases": ["Integración oficial", "Compliance Meta", "Escalabilidad", "Métricas avanzadas"],
+      "industries": ["general", "ecommerce", "salud", "educacion"]
+    },
+    "ecommerce": {
+      "snippet": "¡Perfecto! Tracking tiempo real. ¿Cuántos pedidos?",
+      "roi": "98% satisfacción tracking, 70% menos consultas",
+      "use_cases": ["Confirmaciones oficiales", "Tracking envíos", "Soporte integrado", "Reviews automáticas"],
+      "examples": ["E-commerce grande", "Marketplace", "Retail multicanal"]
+    }
+  },
+  "SEO": {
+    "general": {
+      "snippet": "¡Genial! 10x más visibilidad Google. ¿Qué vendes?",
+      "roi": "10x más leads orgánicos, posicionamiento sostenible",
+      "use_cases": ["Posicionamiento Google", "Google Maps", "Analytics", "Contenido optimizado"],
+      "industries": ["general", "restaurante", "salud", "inmobiliaria"]
+    },
+    "restaurante": {
+      "snippet": "¡Perfecto! Google Maps automático. ¿Dónde están?",
+      "roi": "5x más descubrimiento local, 40% más reservas",
+      "use_cases": ["Google Maps", "Reviews automáticas", "Local SEO", "Menú online"],
+      "examples": ["Restaurante local", "Cadena", "Food truck", "Delivery"]
+    },
+    "salud": {
+      "snippet": "¡Ideal! Pacientes por Google. ¿Qué especialidad?",
+      "roi": "8x más pacientes orgánicos, credibilidad online",
+      "use_cases": ["Posicionamiento médico", "Google Maps", "Reviews pacientes", "Contenido salud"],
+      "examples": ["Clínica", "Consulta privada", "Centro especializado"]
+    },
+    "inmobiliaria": {
+      "snippet": "¡Genial! Leads Google automáticos. ¿Qué zona?",
+      "roi": "12x más leads búsqueda, posicionamiento zona",
+      "use_cases": ["SEO inmobiliario", "Google Maps", "Contenido propiedades", "Local SEO"],
+      "examples": ["Inmobiliaria", "Proyecto", "Broker zona"]
+    }
+  }
+}

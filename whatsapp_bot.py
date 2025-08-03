@@ -97,6 +97,36 @@ class TDXWhatsAppBot:
             )
             return error_response
     
+    async def fast_exit(self, category: str) -> str:
+        """Fast exit para conversaciones Off-Topic"""
+        try:
+            msg = self.off_topic_templates.get(category, "Solo servicios IA empresariales.")
+            await self.chatwoot_client.send_message_with_typing(self.conversation_id, msg, self.user_id)
+            
+            # Log y cerrar conversación
+            await send_bot_summary_to_chatwoot(
+                phone=self.prospect_info.get('phone', 'N/A'),
+                conversation_summary=f"Closed: Off-Topic ({category})",
+                call_outcome=f"Off-Topic: {category}"
+            )
+            
+            # Log del cierre
+            self.conversation_log.append({
+                'turn': len(self.conversation_log) + 1,
+                'type': 'assistant_message',
+                'content': msg,
+                'timestamp': datetime.now().isoformat(),
+                'action': 'fast_exit',
+                'reason': category
+            })
+            
+            logger.info(f"Fast exit applied for {self.conversation_id}: {category}")
+            return "conversation_closed"
+            
+        except Exception as e:
+            logger.error(f"Error in fast_exit: {e}")
+            return "Servicio no disponible actualmente."
+    
     # ELIMINADA: Función de transferencia automática
     # El bot debe enfocarse 100% en calificar y agendar clientes
     
@@ -263,8 +293,8 @@ SÉ SÚPER EMPÁTICO Y BREVE. Máximo 10-12 palabras por respuesta. Ve DIRECTO A
         
         messages = [{"role": "system", "content": system_prompt}]
         
-        # Contexto de conversación (últimos 8 intercambios)
-        recent_log = self.conversation_log[-8:] if len(self.conversation_log) > 8 else self.conversation_log
+        # Contexto corto (últimos 6 intercambios para ultra velocidad)
+        recent_log = self.conversation_log[-6:] if len(self.conversation_log) > 6 else self.conversation_log
         
         for entry in recent_log:
             role = "user" if entry['type'] == 'user_message' else "assistant"
@@ -516,30 +546,33 @@ SÉ SÚPER EMPÁTICO Y BREVE. Máximo 10-12 palabras por respuesta. Ve DIRECTO A
         logger.info(f"WhatsApp bot calling function: {function_name} with args: {function_args}")
         
         try:
-            # Nuevas herramientas para leads fríos con empatía mejorada
-            if function_name == "validate_client_datetime_request":
+            # Herramientas TDX Core 2025 ultra concisas
+            if function_name == "offer_micro_value":
+                return await self.offer_micro_value(
+                    function_args.get("detected_service"),
+                    function_args.get("industry", "general"),
+                    function_args.get("follow_up_question")
+                )
+            elif function_name == "collect_minimal_data":
+                return await self.collect_minimal_data(
+                    function_args.get("missing_field"),
+                    function_args.get("short_request")
+                )
+            elif function_name == "quick_schedule":
+                return await self.quick_schedule(
+                    function_args.get("date"),
+                    function_args.get("time"),
+                    function_args.get("meeting_type")
+                )
+            elif function_name == "quick_response":
+                return await self.quick_response(
+                    function_args.get("response_type"),
+                    function_args.get("ultra_short_response")
+                )
+            elif function_name == "validate_client_datetime_request":
                 return await self.validate_client_datetime_request(
                     function_args.get("requested_date"),
                     function_args.get("requested_time")
-                )
-            elif function_name == "respond_to_question":
-                return await self.respond_to_question(
-                    function_args.get("question_type"),
-                    function_args.get("service_mentioned"),
-                    function_args.get("use_case")
-                )
-            elif function_name == "explore_business_need":
-                return await self.explore_business_need(
-                    function_args.get("service_interest"),
-                    function_args.get("business_problem"),
-                    function_args.get("urgency_level")
-                )
-            elif function_name == "collect_contact_data":
-                return await self.collect_contact_data(
-                    function_args.get("full_name"),
-                    function_args.get("email"),
-                    function_args.get("company_name"),
-                    function_args.get("position")
                 )
             elif function_name == "schedule_consultation":
                 return await self.schedule_consultation(
@@ -1035,3 +1068,76 @@ Perfecto, ahora puedo enviarte la invitación de la reunión.
         except Exception as e:
             logger.error(f"Error scheduling consultation: {e}")
             return "Error agendando. Te contactamos pronto."
+    
+    # ============================================================================
+    # NUEVAS HERRAMIENTAS TDX CORE 2025 - ULTRA CONCISAS SIN PRECIOS
+    # ============================================================================
+    
+    async def offer_micro_value(self, detected_service: str, industry: str = "general", 
+                               follow_up_question: str = "¿Para qué?") -> str:
+        """Tool: Ofrecer micro-valor específico SIN PRECIOS"""
+        try:
+            # Obtener respuesta de micro-valor
+            micro_response = micro_value_injector.get_micro_value(detected_service, industry)
+            
+            # Actualizar prospect_info
+            self.prospect_info['detected_service'] = detected_service
+            self.prospect_info['industry'] = industry
+            
+            logger.info(f"Micro-valor ofrecido: {detected_service} + {industry}")
+            return micro_response
+            
+        except Exception as e:
+            logger.error(f"Error offering micro-value: {e}")
+            return "¡Perfecto para tu caso! ¿Nombre y email?"
+    
+    async def collect_minimal_data(self, missing_field: str, short_request: str) -> str:
+        """Tool: Recolectar datos esenciales ultra directo"""
+        try:
+            # Mapear campos a preguntas ultra cortas
+            field_questions = {
+                'name': "¿Tu nombre?",
+                'email': "¿Tu email?", 
+                'company': "¿Tu empresa?"
+            }
+            
+            question = field_questions.get(missing_field, short_request)
+            
+            # Analizar qué falta realmente
+            slot_analysis = minimal_slot_manager.analyze_prospect_data(self.prospect_info)
+            if not slot_analysis['missing_essential']:
+                return "¡Datos completos! ¿Agendamos?"
+            
+            return question
+            
+        except Exception as e:
+            logger.error(f"Error collecting minimal data: {e}")
+            return "¿Nombre y email?"
+    
+    async def quick_schedule(self, date: str, time: str, meeting_type: str) -> str:
+        """Tool: Agendamiento directo ultra rápido"""
+        try:
+            # Verificar datos esenciales
+            if not self.prospect_info.get('email'):
+                return "Necesito tu email."
+            
+            # Usar función existente optimizada
+            result = await self.schedule_consultation(date, time, meeting_type)
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error quick scheduling: {e}")
+            return "Error agendando. Te contactamos."
+    
+    async def quick_response(self, response_type: str, ultra_short_response: str) -> str:
+        """Tool: Respuesta específica ultra corta"""
+        try:
+            # Validar longitud (máximo 50 caracteres)
+            if len(ultra_short_response) > 50:
+                ultra_short_response = ultra_short_response[:47] + "..."
+            
+            return ultra_short_response
+            
+        except Exception as e:
+            logger.error(f"Error quick response: {e}")
+            return "¡Perfecto!"
