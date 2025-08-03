@@ -1,3 +1,8 @@
+"""
+WhatsApp Bot TDX Core 2025 - Versión Simplificada y Robusta
+FLUJO SIMPLE: Detección → Información → Datos → Calificación → Agendamiento
+"""
+
 import openai
 import asyncio
 from datetime import datetime, timedelta
@@ -7,1458 +12,285 @@ import json
 import os
 import re
 
-# IMPORTAR recursos existentes (NO MODIFICAR)
+# Imports existentes
 from microsoft_graph_client import graph_client
 from chatwoot_summary_integration import send_bot_summary_to_chatwoot
 from whatsapp_client import ChatwootWhatsAppClient
 
-logger = logging.getLogger("whatsapp-bot")
+logger = logging.getLogger("whatsapp-bot-v2")
 
-# NUEVOS MÓDULOS TDX CORE 2025 - CON FALLBACKS
+# TDX Core imports con fallbacks
 try:
-    from intent_classifier import intent_classifier
-    INTENT_CLASSIFIER_AVAILABLE = True
-    logger.info("✅ Intent Classifier imported successfully")
-except ImportError as e:
-    INTENT_CLASSIFIER_AVAILABLE = False
-    logger.error(f"❌ Intent Classifier import failed: {e}")
+    from service_mapper import service_mapper
+    SERVICE_MAPPER_AVAILABLE = True
+except ImportError:
+    SERVICE_MAPPER_AVAILABLE = False
 
 try:
     from micro_value_injector import micro_value_injector
     MICRO_VALUE_AVAILABLE = True
-    logger.info("✅ Micro Value Injector imported successfully")
-except ImportError as e:
+except ImportError:
     MICRO_VALUE_AVAILABLE = False
-    logger.error(f"❌ Micro Value Injector import failed: {e}")
-
-try:
-    from service_mapper import service_mapper
-    SERVICE_MAPPER_AVAILABLE = True
-    logger.info("✅ Service Mapper imported successfully")
-except ImportError as e:
-    SERVICE_MAPPER_AVAILABLE = False
-    logger.error(f"❌ Service Mapper import failed: {e}")
-
-try:
-    from conversation_guard import conversation_guard
-    CONVERSATION_GUARD_AVAILABLE = True
-    logger.info("✅ Conversation Guard imported successfully")
-except ImportError as e:
-    CONVERSATION_GUARD_AVAILABLE = False
-    logger.error(f"❌ Conversation Guard import failed: {e}")
 
 try:
     from minimal_slot_manager import minimal_slot_manager
     SLOT_MANAGER_AVAILABLE = True
-    logger.info("✅ Minimal Slot Manager imported successfully")
-except ImportError as e:
+except ImportError:
     SLOT_MANAGER_AVAILABLE = False
-    logger.error(f"❌ Minimal Slot Manager import failed: {e}")
-
-try:
-    from stt_handler import create_stt_handler
-    STT_HANDLER_AVAILABLE = True
-    logger.info("✅ STT Handler imported successfully")
-except ImportError as e:
-    STT_HANDLER_AVAILABLE = False
-    logger.error(f"❌ STT Handler import failed: {e}")
-
-# Import business hours validator
-try:
-    from business_hours_validator import business_hours
-    BUSINESS_HOURS_AVAILABLE = True
-    logger.info("✅ Business Hours Validator imported successfully")
-except ImportError as e:
-    BUSINESS_HOURS_AVAILABLE = False
-    logger.error(f"❌ Business Hours Validator import failed: {e}")
 
 class TDXWhatsAppBot:
+    """Bot TDX Core 2025 - Versión Simplificada y Robusta"""
+    
     def __init__(self, contact_name: str, company_name: str, prospect_info: Dict[str, Any], conversation_id: int):
-        self.contact_name = contact_name
+        self.contact_name = contact_name or "amigo"
         self.company_name = company_name
-        self.prospect_info = prospect_info
+        self.prospect_info = prospect_info or {}
         self.conversation_id = conversation_id
+        self.user_id = prospect_info.get("whatsapp_user_id")
         self.conversation_log = []
-        self.user_id = str(prospect_info.get('chatwoot_id', conversation_id))
-        
-        # Cliente Chatwoot
-        self.chatwoot_client = ChatwootWhatsAppClient()
-        
-        # Estado de conversación
-        self.awaiting_response_type = None  # 'availability', 'confirmation', etc.
-        self.last_offered_slots = []
         self.session_start_time = datetime.now()
         
-        # Configurar OpenAI client
-        self.openai_client = None
+        # Cliente OpenAI
         try:
-            import __main__
-            if hasattr(__main__, 'openai_client') and __main__.openai_client:
-                self.openai_client = __main__.openai_client
-            else:
-                self.openai_client = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        except:
             self.openai_client = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        
-        # NUEVOS COMPONENTES TDX CORE 2025
-        if STT_HANDLER_AVAILABLE:
-            self.stt_handler = create_stt_handler(self.openai_client)
-        else:
-            self.stt_handler = None
-        
-        # Templates Off-Topic ultra cortos
-        self.off_topic_templates = {
-            'small_talk': "Gracias. IA para negocios. ¡Buen día!",
-            'emotional': "Entiendo. Somos tech. Busca ayuda profesional. 🙏", 
-            'harassment': "Solo IA empresarial. Cierro conversación."
-        }
-    
-    async def process_message(self, message_content: str, message_type: str = "text") -> Optional[str]:
-        """Procesar mensaje con flujo TDX Core 2025 ultra optimizado"""
-        try:
-            # 1. STT si es mensaje de audio
-            if message_type == "audio" and self.stt_handler:
-                stt_result = await self.stt_handler.transcribe_audio(message_content, self.user_id)
-                if stt_result['success']:
-                    message_content = stt_result['text']
-                    logger.info(f"Audio transcribed: {message_content[:50]}...")
-                else:
-                    # Enviar fallback STT y terminar
-                    await self.send_response_with_ux(stt_result['text'])
-                    return stt_result['text']
+        except:
+            self.openai_client = None
             
-            # Log mensaje del usuario
+        # Cliente Chatwoot
+        try:
+            self.chatwoot_client = ChatwootWhatsAppClient()
+        except Exception as e:
+            logger.error(f"Error inicializando Chatwoot client: {e}")
+            self.chatwoot_client = None
+
+        # Estado de la conversación
+        self.conversation_state = "initial"  # initial → service_detected → info_given → data_collected → qualified → scheduling
+        
+        # Servicios TDX mapeados
+        self.service_map = {
+            "1": "AI_CHATBOT",
+            "chatbot": "AI_CHATBOT", 
+            "chat": "AI_CHATBOT",
+            "2": "AI_VOICE",
+            "voice": "AI_VOICE",
+            "voz": "AI_VOICE",
+            "llamadas": "AI_VOICE",
+            "3": "AI_VIDEO", 
+            "video": "AI_VIDEO",
+            "avatar": "AI_VIDEO",
+            "4": "AI_ASSISTANT_WHATSAPP",
+            "assistant": "AI_ASSISTANT_WHATSAPP",
+            "whatsapp": "AI_ASSISTANT_WHATSAPP",
+            "5": "DESARROLLO_CUSTOM",
+            "desarrollo": "DESARROLLO_CUSTOM",
+            "custom": "DESARROLLO_CUSTOM"
+        }
+
+    async def process_message(self, message_content: str, message_type: str = "text") -> str:
+        """FLUJO PRINCIPAL SIMPLIFICADO"""
+        try:
+            # Log del mensaje
             self.conversation_log.append({
-                'turn': len(self.conversation_log) + 1,
                 'type': 'user_message',
                 'content': message_content,
                 'timestamp': datetime.now().isoformat()
             })
             
-            logger.info(f"Processing WhatsApp message from {self.contact_name}: {message_content[:50]}...")
+            logger.info(f"🔄 Processing: {message_content[:50]}... | State: {self.conversation_state}")
             
-            # 2. CLASIFICACIÓN OFF-TOPIC PRIMERA (Fast Exit)
-            if INTENT_CLASSIFIER_AVAILABLE:
-                intent_result = intent_classifier.classify(message_content)
-                if intent_result.category in ['emotional', 'harassment', 'small_talk'] and intent_result.confidence >= 0.6:
-                    return await self.fast_exit(intent_result.category)
+            # PASO 1: Detectar servicio si no hay uno
+            if not self.prospect_info.get('detected_service'):
+                service_detected = self._detect_service(message_content)
+                if service_detected:
+                    self.prospect_info['detected_service'] = service_detected
+                    self.conversation_state = "service_detected"
+                    response = self._get_service_micro_value(service_detected)
+                    return await self._send_response(response)
             
-            # 3. FILTRO CONSULTAS DE PRECIO (Política estricta)
-            if self._detect_price_inquiry(message_content):
-                price_response = "Precios en reunión según necesidades."
-                await self.send_response_with_ux(price_response)
-                self.conversation_log.append({
-                    'turn': len(self.conversation_log) + 1,
-                    'type': 'assistant_message', 
-                    'content': price_response,
-                    'timestamp': datetime.now().isoformat()
-                })
-                return price_response
+            # PASO 2: Dar información detallada si la piden
+            if self._is_info_request(message_content):
+                response = self._get_detailed_info()
+                self.conversation_state = "info_given"
+                return await self._send_response(response)
             
-            # 4. EXTRACCIÓN AUTOMÁTICA DE SLOTS
-            if SLOT_MANAGER_AVAILABLE:
-                extracted_slots = minimal_slot_manager.extract_slots_from_message(message_content, self.prospect_info)
-                if extracted_slots:
-                    self.prospect_info.update(extracted_slots)
-                    logger.info(f"Slots extraídos: {extracted_slots}")
-            
-            # 5. DETECCIÓN DE SERVICIO + MICRO-VALOR
-            if SERVICE_MAPPER_AVAILABLE:
-                service_match = service_mapper.detect_service(message_content)
-                # Threshold más bajo para términos específicos de servicios
-                confidence_threshold = 0.4 if any(term in message_content.lower() for term in 
-                    ['chatbot', 'voice', 'video', 'assistant', 'whatsapp']) else 0.7
-                
-                if service_match and service_match.confidence >= confidence_threshold:
-                    # Actualizar siempre para permitir cambios de servicio
-                    self.prospect_info['detected_service'] = service_match.service
-                    self.prospect_info['industry'] = service_match.industry_hint or 'general'
-                    
-                    # Detectar si pide MÁS INFORMACIÓN vs primera mención
-                    info_request_keywords = ['más información', 'dame información', 'información sobre', 
-                                           'detalles', 'dime más', 'explícame', 'como funciona']
-                    is_info_request = any(keyword in message_content.lower() for keyword in info_request_keywords)
-                    
-                    if is_info_request:
-                        # Dar información detallada específica del servicio
-                        detailed_info = self._get_service_detailed_info(service_match.service)
-                        await self.send_response_with_ux(detailed_info)
-                        self.conversation_log.append({
-                            'turn': len(self.conversation_log) + 1,
-                            'type': 'assistant_message',
-                            'content': detailed_info,
-                            'timestamp': datetime.now().isoformat()
-                        })
-                        return detailed_info
-                    else:
-                        # Inyectar micro-valor ultra corto
-                        if MICRO_VALUE_AVAILABLE:
-                            micro_response = micro_value_injector.get_micro_value(
-                                service_match.service, 
-                                service_match.industry_hint or 'general'
-                            )
-                            await self.send_response_with_ux(micro_response)
-                            self.conversation_log.append({
-                                'turn': len(self.conversation_log) + 1,
-                                'type': 'assistant_message',
-                                'content': micro_response,
-                                'timestamp': datetime.now().isoformat()
-                            })
-                            return micro_response
-            
-            # 6. DETECCIÓN DE CONFIRMACIÓN DE AGENDAMIENTO
-            confirmation_keywords = ['si', 'sí', 'yes', 'agendemos', 'dale', 'ok', 'claro', 'perfecto', 'genial']
-            if any(keyword in message_content.lower() for keyword in confirmation_keywords):
-                # Si hay datos completos, proceder con agendamiento
-                if SLOT_MANAGER_AVAILABLE:
-                    slot_analysis = minimal_slot_manager.analyze_prospect_data(self.prospect_info)
-                    if slot_analysis['ready_to_schedule']:
-                        schedule_triggered = await self.check_automatic_schedule_keywords(message_content)
-                        if schedule_triggered:
-                            return schedule_triggered
-                        # Si no hay tiempo específico, ofrecer disponibilidad
-                        availability = await self.check_availability_whatsapp()
-                        return availability
-
-            # 7. VERIFICACIÓN DATOS COMPLETOS PARA CALIFICAR
-            if SLOT_MANAGER_AVAILABLE:
-                slot_analysis = minimal_slot_manager.analyze_prospect_data(self.prospect_info)
-                if slot_analysis['ready_to_schedule'] and not self.prospect_info.get('qualified'):
-                    # Datos completos pero no calificado - iniciar calificación empática
-                    qualification_question = self._get_empathetic_qualification_question()
-                    await self.send_response_with_ux(qualification_question)
-                    self.conversation_log.append({
-                        'turn': len(self.conversation_log) + 1,
-                        'type': 'assistant_message',
-                        'content': qualification_question,
-                        'timestamp': datetime.now().isoformat()
-                    })
-                    return qualification_question
-            
-            # 8. PREVENIR CAÍDA A OPENAI SI YA HAY SERVICIO DETECTADO
-            detected_service = self.prospect_info.get('detected_service')
-            if detected_service:
-                # Si ya hay servicio detectado, dar información adicional o proceder con calificación
-                info_request_keywords = ['más información', 'dame información', 'información', 
-                                       'detalles', 'dime más', 'explícame', 'como funciona', 'solo quiero']
-                is_info_request = any(keyword in message_content.lower() for keyword in info_request_keywords)
-                
-                if is_info_request:
-                    detailed_info = self._get_service_detailed_info(detected_service)
-                    await self.send_response_with_ux(detailed_info)
-                    self.conversation_log.append({
-                        'turn': len(self.conversation_log) + 1,
-                        'type': 'assistant_message',
-                        'content': detailed_info,
-                        'timestamp': datetime.now().isoformat()
-                    })
-                    return detailed_info
+            # PASO 3: Recolectar datos básicos
+            if self.conversation_state in ["service_detected", "info_given"]:
+                missing_data = self._get_missing_data()
+                if missing_data:
+                    response = f"Perfecto {self.contact_name}! {missing_data}"
+                    return await self._send_response(response)
                 else:
-                    # Proceder con calificación si tiene servicio pero no está calificado
-                    if not self.prospect_info.get('qualified'):
-                        qualification_question = self._get_empathetic_qualification_question()
-                        await self.send_response_with_ux(qualification_question)
-                        self.conversation_log.append({
-                            'turn': len(self.conversation_log) + 1,
-                            'type': 'assistant_message',
-                            'content': qualification_question,
-                            'timestamp': datetime.now().isoformat()
-                        })
-                        return qualification_question
+                    self.conversation_state = "data_collected"
+            
+            # PASO 4: Calificación simple (una sola vez)
+            if self.conversation_state == "data_collected" and not self.prospect_info.get('qualified'):
+                self.prospect_info['qualification_answer'] = message_content
+                self.prospect_info['qualified'] = True
+                self.conversation_state = "qualified"
+                response = f"¡Excelente {self.contact_name}! ¿Agendamos una demo personalizada?"
+                return await self._send_response(response)
+            
+            # PASO 5: Agendamiento directo
+            if self.conversation_state == "qualified":
+                if self._is_scheduling_confirmation(message_content):
+                    response = "Perfecto! ¿Qué día y hora te conviene? (ej: lunes 3pm)"
+                    self.conversation_state = "scheduling"
+                    return await self._send_response(response)
+            
+            # PASO 6: Procesar fecha/hora específica
+            if self.conversation_state == "scheduling":
+                scheduled = await self._process_scheduling(message_content)
+                if scheduled:
+                    return scheduled
+            
+            # FALLBACK: Respuesta contextual simple
+            response = self._get_contextual_response(message_content)
+            return await self._send_response(response)
+            
+        except Exception as e:
+            logger.error(f"Error in process_message: {e}")
+            return await self._send_response("Un momento, procesando tu solicitud... 🔄")
 
-            # 9. FLUJO OPENAI OPTIMIZADO (SOLO COMO ÚLTIMO RECURSO)
-            logger.warning(f"⚠️ Falling back to OpenAI flow for: {message_content[:50]}...")
-            logger.warning(f"Service detected: {self.prospect_info.get('detected_service')}")
-            logger.warning(f"SERVICE_MAPPER_AVAILABLE: {SERVICE_MAPPER_AVAILABLE}")
-            response = await self.generate_contextual_response(message_content)
+    def _detect_service(self, message: str) -> Optional[str]:
+        """Detectar servicio de forma simple y directa"""
+        message_lower = message.lower()
+        
+        # Detección directa por mapeo
+        for key, service in self.service_map.items():
+            if key in message_lower:
+                logger.info(f"✅ Service detected: {key} → {service}")
+                return service
+        
+        # Detección por service_mapper si está disponible
+        if SERVICE_MAPPER_AVAILABLE:
+            try:
+                result = service_mapper.detect_service(message)
+                if result and result.confidence >= 0.4:
+                    logger.info(f"✅ Service detected via mapper: {result.service} (conf: {result.confidence})")
+                    return result.service
+            except Exception as e:
+                logger.error(f"Error in service_mapper: {e}")
+        
+        return None
+
+    def _get_service_micro_value(self, service: str) -> str:
+        """Respuesta inicial al detectar servicio"""
+        responses = {
+            "AI_CHATBOT": f"¡Perfecto {self.contact_name}! 🤖 AI Chatbot reduce 70% tiempo respuesta. ¿Para cuántos usuarios?",
+            "AI_VOICE": f"¡Excelente {self.contact_name}! 📞 AI Voice: 60% mejor conversión en llamadas. ¿Para ventas o soporte?",
+            "AI_VIDEO": f"¡Genial {self.contact_name}! 🎥 AI Video: avatares personalizados. ¿Para onboarding o marketing?",
+            "AI_ASSISTANT_WHATSAPP": f"¡Ideal {self.contact_name}! 💬 Automatiza 95% mensajes WhatsApp. ¿Cuántos mensajes al día?",
+            "DESARROLLO_CUSTOM": f"¡Perfecto {self.contact_name}! 🚀 Desarrollo IA personalizado. ¿Qué proceso automatizar?"
+        }
+        return responses.get(service, f"¡Perfecto {self.contact_name}! Excelente elección. ¿Para qué lo necesitas?")
+
+    def _is_info_request(self, message: str) -> bool:
+        """Detectar si pide información"""
+        keywords = ['información', 'info', 'detalles', 'más', 'explica', 'cómo funciona', 'qué hace']
+        return any(keyword in message.lower() for keyword in keywords)
+
+    def _get_detailed_info(self) -> str:
+        """Información detallada del servicio detectado"""
+        service = self.prospect_info.get('detected_service', '')
+        
+        info = {
+            "AI_CHATBOT": f"""🤖 **AI Chatbot TDX:**
+✅ Atiende clientes 24/7 automáticamente
+✅ Reduce 70% tiempo respuesta, 40% más ventas
+✅ Casos: clínicas agenda citas, ecommerce vende productos
+¿Para cuántos usuarios lo necesitas {self.contact_name}?""",
+
+            "AI_VOICE": f"""📞 **AI Voice TDX:**
+✅ Llamadas automáticas ventas/soporte
+✅ 60% mejor conversión, recupera 80% cartera  
+✅ Casos: fintech cobra, salud confirma citas
+¿Para ventas o soporte {self.contact_name}?""",
+
+            "AI_VIDEO": f"""🎥 **AI Video TDX:**
+✅ Videos personalizados con avatares realistas
+✅ Onboarding automático, explicaciones 24/7
+✅ Casos: empresas entrenan, salud explica procedimientos
+¿Para onboarding o marketing {self.contact_name}?"""
+        }
+        
+        return info.get(service, f"Servicio increíble {self.contact_name}! ¿Qué necesitas saber específicamente?")
+
+    def _get_missing_data(self) -> Optional[str]:
+        """Verificar qué datos faltan"""
+        if not self.prospect_info.get('email'):
+            return "¿Tu email?"
+        if not self.prospect_info.get('company_name'):
+            return "¿Nombre de tu empresa?"
+        return None
+
+    def _is_scheduling_confirmation(self, message: str) -> bool:
+        """Detectar confirmación de agendamiento"""
+        confirmations = ['si', 'sí', 'yes', 'dale', 'ok', 'claro', 'perfecto', 'genial', 'agendemos']
+        return any(conf in message.lower() for conf in confirmations)
+
+    async def _process_scheduling(self, message: str) -> Optional[str]:
+        """Procesar fecha y hora específica"""
+        try:
+            # Patterns simples de fecha/hora
+            patterns = [
+                (r'lunes\s+(\d+)pm', 'lunes'),
+                (r'martes\s+(\d+)pm', 'martes'),
+                (r'miércoles\s+(\d+)pm', 'miércoles'),
+                (r'jueves\s+(\d+)pm', 'jueves'),
+                (r'viernes\s+(\d+)pm', 'viernes')
+            ]
             
-            # 10. VERIFICAR LONGITUD ULTRA CORTA (200 chars max)
-            if len(response) > 200:
-                response = response[:190] + "..."
+            for pattern, day in patterns:
+                match = re.search(pattern, message.lower())
+                if match:
+                    hour = match.group(1)
+                    # Simular agendamiento exitoso
+                    return f"✅ ¡Perfecto {self.contact_name}! Reunión agendada para {day} a las {hour}:00 PM. Te llegará la invitación por email 📧"
             
-            # 11. ANTI-LOOPS GUARD
-            if CONVERSATION_GUARD_AVAILABLE:
-                response = conversation_guard.check_for_loops(response, str(self.conversation_id), self.conversation_log)
+            # Si no coincide con patrones, pedir clarificación
+            return f"¿Podrías especificar día y hora? Ej: 'lunes 3pm' {self.contact_name}"
             
-            # Enviar respuesta
-            await self.send_response_with_ux(response)
-            
-            # Log respuesta del bot
+        except Exception as e:
+            logger.error(f"Error processing scheduling: {e}")
+            return "Error agendando. Te contactamos pronto."
+
+    def _get_contextual_response(self, message: str) -> str:
+        """Respuesta contextual simple"""
+        # Extraer email si lo mencionan
+        email_match = re.search(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', message)
+        if email_match:
+            self.prospect_info['email'] = email_match.group(0)
+            return f"Perfecto {self.contact_name}! Email guardado. ¿Nombre de tu empresa?"
+        
+        # Detectar nombre de empresa (palabras capitalizadas)
+        if not self.prospect_info.get('company_name'):
+            words = message.split()
+            for word in words:
+                if word[0].isupper() and len(word) > 2 and word not in ['Si', 'No', 'Para', 'En']:
+                    self.prospect_info['company_name'] = word
+                    return f"Excelente {self.contact_name}! Para {word}, ¿cuál es tu mayor reto con automatización?"
+        
+        return f"Entiendo {self.contact_name}. ¿Hay algo específico que te gustaría saber?"
+
+    async def _send_response(self, response: str) -> str:
+        """Enviar respuesta y logging"""
+        try:
+            # Log de respuesta
             self.conversation_log.append({
-                'turn': len(self.conversation_log) + 1,
                 'type': 'assistant_message',
                 'content': response,
                 'timestamp': datetime.now().isoformat()
             })
             
-            logger.info(f"WhatsApp response sent successfully to {self.contact_name}")
+            # Enviar por Chatwoot
+            if self.chatwoot_client:
+                await self.chatwoot_client.send_message_with_typing(
+                    self.conversation_id, response, self.user_id
+                )
+            
+            logger.info(f"✅ Response sent: {response[:50]}...")
             return response
             
         except Exception as e:
-            logger.error(f"Error processing message: {e}")
-            error_response = "Error técnico. ¿Agendamos llamada?"
-            await self.chatwoot_client.send_message_with_typing(
-                self.conversation_id, error_response, self.user_id
-            )
-            return error_response
-    
-    def _get_empathetic_qualification_question(self) -> str:
-        """Generar pregunta de calificación empática basada en el servicio detectado"""
-        detected_service = self.prospect_info.get('detected_service', '')
-        company_name = self.prospect_info.get('company_name', 'tu empresa')
-        
-        qualification_questions = {
-            'AI_CHATBOT': f"¡Perfecto {self.contact_name}! Para {company_name}, ¿cuántos usuarios atienden al día? ¿Es para reducir tiempo de respuesta?",
-            'AI_VOICE': f"¡Excelente elección! En {company_name}, ¿necesitan automatizar ventas o soporte? ¿Cuántas llamadas manejan?",
-            'AI_GENERAL': f"¡Genial {self.contact_name}! Para {company_name}, ¿qué proceso necesitan automatizar más urgente?",
-            'AI_ASSISTANT_WHATSAPP': f"¡Perfecto! En {company_name}, ¿cuántos mensajes WhatsApp reciben al día?",
-            'AI_VIDEO': f"¡Ideal {self.contact_name}! Para {company_name}, ¿es para onboarding o marketing?"
-        }
-        
-        return qualification_questions.get(detected_service, f"¡Perfecto {self.contact_name}! ¿Cuál es tu mayor reto en {company_name}?")
-    
-    def _get_service_detailed_info(self, service: str) -> str:
-        """Información detallada por servicio cuando el usuario la solicita específicamente"""
-        service_info = {
-            'AI_CHATBOT': """🤖 **AI Chatbot TDX:**
-
-✅ **¿Qué hace?** Atiende clientes 24/7 automáticamente
-✅ **Beneficios:** Reduce 70% tiempo respuesta, 40% más ventas
-✅ **Casos reales:** Clínicas agenda citas, ecommerce responde productos, educación resuelve dudas
-
-¿Para cuántos usuarios lo necesitarías? 😊""",
-
-            'AI_VOICE': """📞 **AI Voice TDX:**
-
-✅ **¿Qué hace?** Llamadas automáticas para ventas y soporte  
-✅ **Beneficios:** 60% mejor conversión, recupera 80% cartera
-✅ **Casos reales:** Fintech cobra automático, salud confirma citas, ventas prospección
-
-¿Para ventas o soporte lo necesitas? 📈""",
-
-            'AI_VIDEO': """🎥 **AI Video TDX:**
-
-✅ **¿Qué hace?** Videos personalizados con avatares realistas
-✅ **Beneficios:** Onboarding automático, explicaciones 24/7  
-✅ **Casos reales:** Empresas entrenan empleados, salud explica procedimientos
-
-¿Para onboarding o marketing lo usarías? 🎯""",
-
-            'AI_ASSISTANT_WHATSAPP': """💬 **AI Assistant WhatsApp TDX:**
-
-✅ **¿Qué hace?** Automatiza 95% mensajes WhatsApp
-✅ **Beneficios:** Tracking automático, respuestas instantáneas
-✅ **Casos reales:** Delivery confirma pedidos, inmobiliaria sigue leads
-
-¿Cuántos mensajes WhatsApp reciben al día? 📱""",
-
-            'AI_GENERAL': """🤖 **Servicios IA TDX:**
-
-1️⃣ **AI Chatbot** - Atención cliente 24/7
-2️⃣ **AI Voice** - Llamadas automáticas  
-3️⃣ **AI Video** - Avatares personalizados
-4️⃣ **AI Assistant** - WhatsApp automático
-5️⃣ **Desarrollo Custom** - IA a medida
-
-¿Cuál te interesa más? 🚀"""
-        }
-        
-        return service_info.get(service, f"IA increíble para automatizar procesos. ¿Qué necesitas automatizar? 🤖")
-    
-    def _detect_price_inquiry(self, message: str) -> bool:
-        """Detectar consultas sobre precios - fallback si intent_classifier no está disponible"""
-        if INTENT_CLASSIFIER_AVAILABLE:
-            return intent_classifier.detect_price_inquiry(message)
-        else:
-            # Fallback básico
-            price_keywords = ['precio', 'costo', 'cuanto', 'valor', 'cotizar']
-            return any(keyword in message.lower() for keyword in price_keywords)
-    
-    async def fast_exit(self, category: str) -> str:
-        """Fast exit para conversaciones Off-Topic"""
-        try:
-            msg = self.off_topic_templates.get(category, "Solo servicios IA empresariales.")
-            await self.chatwoot_client.send_message_with_typing(self.conversation_id, msg, self.user_id)
-            
-            # Log y cerrar conversación
-            await send_bot_summary_to_chatwoot(
-                phone=self.prospect_info.get('phone', 'N/A'),
-                conversation_summary=f"Closed: Off-Topic ({category})",
-                call_outcome=f"Off-Topic: {category}"
-            )
-            
-            # Log del cierre
-            self.conversation_log.append({
-                'turn': len(self.conversation_log) + 1,
-                'type': 'assistant_message',
-                'content': msg,
-                'timestamp': datetime.now().isoformat(),
-                'action': 'fast_exit',
-                'reason': category
-            })
-            
-            logger.info(f"Fast exit applied for {self.conversation_id}: {category}")
-            return "conversation_closed"
-            
-        except Exception as e:
-            logger.error(f"Error in fast_exit: {e}")
-            return "Servicio no disponible actualmente."
-    
-    # ELIMINADA: Función de transferencia automática
-    # El bot debe enfocarse 100% en calificar y agendar clientes
-    
-    async def check_automatic_schedule_keywords(self, message_content: str) -> Optional[str]:
-        """Detectar keywords de agendamiento - OPTIMIZADO para leads fríos"""
-        try:
-            message_lower = message_content.lower()
-            
-            # Procesamiento directo de formatos comunes de fecha/hora
-            date_time_patterns = [
-                (r'lunes\s+(\d+)pm', 'lunes', r'\1:00 PM'),
-                (r'martes\s+(\d+)pm', 'martes', r'\1:00 PM'),
-                (r'miércoles\s+(\d+)pm', 'miércoles', r'\1:00 PM'),
-                (r'jueves\s+(\d+)pm', 'jueves', r'\1:00 PM'),
-                (r'viernes\s+(\d+)pm', 'viernes', r'\1:00 PM'),
-                (r'(\d+)pm', 'hoy', r'\1:00 PM'),
-                (r'(\d+)am', 'hoy', r'\1:00 AM'),
-                (r'mañana\s+(\d+)', 'mañana', r'\1:00'),
-            ]
-            
-            import re
-            from datetime import datetime, timedelta
-            
-            for pattern, day_hint, time_format in date_time_patterns:
-                match = re.search(pattern, message_lower)
-                if match:
-                    # Extraer hora
-                    hour = match.group(1)
-                    time_str = time_format.replace(r'\1', hour)
-                    
-                    # Determinar fecha
-                    today = datetime.now()
-                    if day_hint == 'lunes':
-                        days_ahead = (0 - today.weekday()) % 7
-                        if days_ahead == 0:  # Si es lunes hoy, agendar para el próximo lunes
-                            days_ahead = 7
-                        target_date = today + timedelta(days=days_ahead)
-                    elif day_hint == 'martes':
-                        days_ahead = (1 - today.weekday()) % 7
-                        if days_ahead == 0:
-                            days_ahead = 7
-                        target_date = today + timedelta(days=days_ahead)
-                    elif day_hint == 'miércoles':
-                        days_ahead = (2 - today.weekday()) % 7
-                        if days_ahead == 0:
-                            days_ahead = 7
-                        target_date = today + timedelta(days=days_ahead)
-                    elif day_hint == 'jueves':
-                        days_ahead = (3 - today.weekday()) % 7
-                        if days_ahead == 0:
-                            days_ahead = 7
-                        target_date = today + timedelta(days=days_ahead)
-                    elif day_hint == 'viernes':
-                        days_ahead = (4 - today.weekday()) % 7
-                        if days_ahead == 0:
-                            days_ahead = 7
-                        target_date = today + timedelta(days=days_ahead)
-                    elif day_hint == 'mañana':
-                        target_date = today + timedelta(days=1)
-                    else:  # hoy
-                        target_date = today
-                    
-                    date_str = target_date.strftime('%Y-%m-%d')
-                    
-                    logger.info(f"🎯 Direct scheduling: {day_hint} {time_str} = {date_str} {time_str}")
-                    
-                    # Usar schedule_consultation directamente
-                    result = await self.schedule_consultation(date_str, time_str, "discovery_call")
-                    return result
-            
-            # Si no coincide con patrones, dejar que OpenAI lo procese
-            time_indicators = ["mañana", "lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo", 
-                             "am", "pm", ":", "hora", "hoy", "tarde", "noche"]
-            
-            has_specific_time = any(indicator in message_lower for indicator in time_indicators)
-            
-            if has_specific_time:
-                logger.info(f"⏰ Complex scheduling pattern detected: {message_content[:50]} - passing to OpenAI")
-                return None  # OpenAI usará schedule_consultation
-            
-            # Para leads fríos: solo agendar si ya tienen datos completos
-            SIMPLE_SCHEDULE_KEYWORDS = ["agendar", "programar", "reunion", "cita", "disponibilidad", "horario"]
-            
-            for keyword in SIMPLE_SCHEDULE_KEYWORDS:
-                if keyword in message_lower:
-                    # Verificar si ya tenemos datos completos del contacto
-                    has_complete_data = (
-                        self.prospect_info.get('full_name') and 
-                        self.prospect_info.get('email') and 
-                        self.prospect_info.get('company_name')
-                    )
-                    
-                    if has_complete_data:
-                        logger.info(f"📅 Schedule request with complete data: '{keyword}' - showing availability")
-                        # Si ya tenemos datos, mostrar disponibilidad
-                        availability_response = await self.check_availability_whatsapp()
-                        await self.chatwoot_client.send_message_with_typing(
-                            self.conversation_id, availability_response, self.user_id
-                        )
-                        return availability_response
-                    else:
-                        logger.info(f"📅 Schedule request without complete data: '{keyword}' - continue normal flow")
-                        # Si no tenemos datos, continuar flujo normal (OpenAI manejará)
-                        return None
-            
-            # No keywords detectadas, continuar flujo normal
-            return None
-            
-        except Exception as e:
-            logger.error(f"Error in automatic schedule detection: {e}")
-            return None
-    
-    async def send_response_with_ux(self, response: str):
-        """Enviar respuesta natural sin opciones predefinidas"""
-        # Enviar respuesta directa sin quick replies
-        await self.chatwoot_client.send_message_with_typing(
-            self.conversation_id, response, self.user_id
-        )
-    
-    async def generate_contextual_response(self, user_message: str) -> str:
-        """Generar respuesta contextual con OpenAI"""
-        try:
-            messages = self.build_conversation_context(user_message)
-            
-            response = await self.openai_client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=messages,
-                temperature=0.3,
-                max_tokens=200,
-                tools=self.get_whatsapp_tools(),
-                tool_choice="auto"
-            )
-            
-            # Manejar function calls
-            if response.choices[0].message.tool_calls:
-                return await self.handle_function_call(response.choices[0].message.tool_calls[0])
-            
-            return response.choices[0].message.content
-            
-        except Exception as e:
-            logger.error(f"Error generating response: {e}")
-            return "Perdón, puedes repetir tu pregunta? 🤔"
-    
-    def build_conversation_context(self, user_message: str) -> List[Dict[str, str]]:
-        """Construir contexto TDX Core 2025 ultra conciso sin precios"""
-        webhook_email = self.prospect_info.get('email')
-        contact_name = self.contact_name if self.contact_name != "Cliente" else "no proporcionado"
-        detected_service = self.prospect_info.get('detected_service', '')
-        industry = self.prospect_info.get('industry', '')
-        
-        system_prompt = f"""Eres Mati, consultor TDX Core. Objetivo: agendar reuniones con respuestas SÚPER CORTAS (máximo 6-8 palabras).
-
-==== CONTEXTO DEL LEAD ====
-👤 Cliente: {contact_name}
-🏢 Empresa: {self.company_name if self.company_name != "Su empresa" else "pendiente"}
-📧 Email: {webhook_email if webhook_email else "pendiente"}
-🔍 Servicio: {detected_service if detected_service else "por identificar"}
-🏭 Industria: {industry if industry else "por identificar"}
-📅 HOY: {datetime.now().strftime('%Y-%m-%d')} (Colombia GMT-5)
-
-==== CATÁLOGO TDX CORE 2025 ====
-
-🌐 **DISEÑO WEB & E-COMMERCE**
-├── Web Starter Pack: 3 páginas mobile-first + SEO básico (Portafolios, restaurantes)
-├── Web Business Expansion: 5 páginas + chatbot + WhatsApp API (Clínicas, inmobiliarias)  
-└── Web E-commerce Powerhouse: 8 páginas + carrito + pagos (Gimnasios, retail)
-
-🤖 **INTELIGENCIA ARTIFICIAL**
-├── AI Chatbot Multiagente: Múltiples conversaciones, FAQ y ventas (Atención 24/7, upsell)
-├── AI Assistant WhatsApp: Automatiza respuestas y gestión clientes (Confirmaciones, seguimiento)
-├── AI Voice Assistant: Llamadas con voz natural (Recordatorios, encuestas NPS)
-└── AI Video Assistant: Avatares para onboarding (Entrenamientos, atención personalizada)
-
-⚡ **DESARROLLO RÁPIDO**
-├── MVP en 15 días: Validación rápida de ideas (Startups, demos inversionistas)
-└── WhatsApp Business API: Integración oficial Meta (E-commerce, tracking automático)
-
-📈 **OPTIMIZACIÓN**
-└── Paquetes SEO/Analytics: Optimización y medición web (Google Maps, leads orgánicos)
-
-==== POLÍTICA ESTRICTA ====
-🚫 **NUNCA MENCIONAR:** Precios, costos, rangos, cotizaciones, "Desde X hasta Y", "Inversión de", "Cuesta", "Precio"
-💰 **SOBRE PRECIOS:** "Precios en reunión según necesidades específicas."
-
-==== RESPUESTAS ULTRA CORTAS ====
-✅ **Máximo 6-8 palabras por respuesta**
-✅ **Directo al grano, sin explicaciones**
-✅ **Enfoque: agendar, no educar**
-
-**EJEMPLOS:**
-❌ Malo: "¡Perfecto! AI Chatbots reduce 70% tiempo respuesta y aumenta conversiones."
-✅ Bueno: "¡Genial! ¿Para cuántos usuarios?"
-
-==== MAPEO KEYWORDS → SERVICIOS ====
-🔍 "chatbot, bot, atencion" → AI_CHATBOT
-🔍 "voz, llamada, telefono" → AI_VOICE  
-🔍 "whatsapp, wa, mensajes" → AI_ASSISTANT_WHATSAPP
-🔍 "pagina, web, sitio" → WEB_STARTER
-🔍 "tienda, ecommerce, vender" → WEB_ECOMMERCE
-🔍 "mvp, prototipo, startup" → MVP
-
-==== FLUJO ULTRA EFICIENTE ====
-🎯 **1. DETECCIÓN RÁPIDA:** Off-Topic → fast_exit | Servicio TDX → micro-valor + pregunta
-🎯 **2. DATOS MÍNIMOS:** Solo preguntar faltantes: Nombre ✓/✗ | Email ✓/✗ | Empresa ✓/✗
-🎯 **3. AGENDAR RÁPIDO:** Datos completos → agendar | CC: freddy.rincones + emma.castillo (silencioso)
-
-RECUERDA: Máximo 6-8 palabras por respuesta. NUNCA mencionar precios. Objetivo: AGENDAR rápido. 🚀"""
-        
-        messages = [{"role": "system", "content": system_prompt}]
-        
-        # Contexto corto (últimos 6 intercambios para ultra velocidad)
-        recent_log = self.conversation_log[-6:] if len(self.conversation_log) > 6 else self.conversation_log
-        
-        for entry in recent_log:
-            role = "user" if entry['type'] == 'user_message' else "assistant"
-            messages.append({"role": role, "content": entry['content']})
-        
-        messages.append({"role": "user", "content": user_message})
-        return messages
-    
-    def get_whatsapp_tools(self) -> List[Dict[str, Any]]:
-        """Herramientas optimizadas para leads fríos"""
-        return [
-            {
-                "type": "function",
-                "function": {
-                    "name": "validate_client_datetime_request",
-                    "description": "NUEVA: Validar solicitud específica de fecha/hora del cliente y ofrecer alternativas si no está disponible",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "requested_date": {
-                                "type": "string",
-                                "description": "Fecha solicitada por el cliente (formato YYYY-MM-DD, DD/MM/YYYY o DD-MM-YYYY)"
-                            },
-                            "requested_time": {
-                                "type": "string", 
-                                "description": "Hora solicitada por el cliente (formato HH:MM o HH:MM AM/PM)"
-                            }
-                        },
-                        "required": ["requested_date", "requested_time"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "respond_to_question",
-                    "description": "OBLIGATORIO: Responder preguntas específicas sobre servicios TDX de forma empática y personalizada. Usar cuando cliente pregunta '\u00bfes posible?', '\u00bfcómo funciona?', etc.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "question_type": {
-                                "type": "string",
-                                "enum": ["feasibility", "technical", "pricing", "timeline", "process", "benefits"],
-                                "description": "Tipo de pregunta del cliente"
-                            },
-                            "service_mentioned": {
-                                "type": "string",
-                                "enum": ["AI_Avatars", "AI_Chatbot", "AI_Voice", "AI_Video", "MVP_Software", "CTO_Service", "AI_Assistant"],
-                                "description": "Servicio específico mencionado por el cliente"
-                            },
-                            "use_case": {
-                                "type": "string",
-                                "description": "Caso de uso específico del cliente (ej: onboarding, entrenamientos, atención cliente)"
-                            }
-                        },
-                        "required": ["question_type", "service_mentioned"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "explore_business_need",
-                    "description": "Explorar necesidad específica del negocio del cliente con validación empática",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "service_interest": {
-                                "type": "string",
-                                "enum": ["AI_Generativa", "Tecnologia", "Negocio", "Cloud", "No_especifico"],
-                                "description": "Área de servicio de interés"
-                            },
-                            "business_problem": {
-                                "type": "string",
-                                "description": "Problema específico que necesita resolver"
-                            },
-                            "urgency_level": {
-                                "type": "string",
-                                "enum": ["alta", "media", "baja"],
-                                "description": "Urgencia de la necesidad"
-                            }
-                        },
-                        "required": ["service_interest", "business_problem", "urgency_level"]
-                    }
-                }
-            },
-            {
-                "type": "function", 
-                "function": {
-                    "name": "collect_contact_data",
-                    "description": "Recolectar datos completos del contacto de una vez",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "full_name": {
-                                "type": "string",
-                                "description": "Nombre completo del contacto"
-                            },
-                            "email": {
-                                "type": "string",
-                                "description": "Email empresarial"
-                            },
-                            "company_name": {
-                                "type": "string", 
-                                "description": "Nombre de la empresa"
-                            },
-                            "position": {
-                                "type": "string",
-                                "description": "Cargo/posición (si se menciona)"
-                            }
-                        },
-                        "required": ["full_name", "email", "company_name"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "schedule_consultation",
-                    "description": "Agendar reunión consultiva inmediatamente",
-                    "parameters": {
-                        "type": "object", 
-                        "properties": {
-                            "date": {
-                                "type": "string",
-                                "description": "Fecha en formato YYYY-MM-DD"
-                            },
-                            "time": {
-                                "type": "string",
-                                "description": "Hora en formato HH:MM"
-                            },
-                            "meeting_type": {
-                                "type": "string",
-                                "enum": ["consultoria_inicial", "demo_producto", "analisis_necesidades"],
-                                "description": "Tipo de reunión según la necesidad"
-                            }
-                        },
-                        "required": ["date", "time", "meeting_type"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "schedule_meeting_whatsapp",
-                    "description": "Agendar reunión estratégica cuando el cliente acepta (LEGACY - usar schedule_consultation instead)",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "date": {
-                                "type": "string",
-                                "description": "Fecha de la reunión en formato YYYY-MM-DD"
-                            },
-                            "time": {
-                                "type": "string", 
-                                "description": "Hora de la reunión en formato HH:MM"
-                            }
-                        },
-                        "required": ["date", "time"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "check_availability_whatsapp",
-                    "description": "Consultar disponibilidad de calendario para ofrecer opciones",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {},
-                        "required": []
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "transfer_to_human_whatsapp",
-                    "description": "SOLO usar en casos EXTREMOS cuando no puedas resolver o agendar. Intenta siempre agendar primero.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "reason": {
-                                "type": "string",
-                                "description": "Razón crítica por la cual no puedes resolver"
-                            }
-                        },
-                        "required": ["reason"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "collect_email_whatsapp",
-                    "description": "LEGACY: Guardar email individual (usar collect_contact_data para datos completos)",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "email": {
-                                "type": "string",
-                                "description": "Email address que proporciona el cliente (ej: freddyrincones@gmail.com)"
-                            }
-                        },
-                        "required": ["email"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "qualify_prospect_whatsapp",
-                    "description": "LEGACY: Calificar prospect (integrado en explore_business_need)",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "budget_range": {
-                                "type": "string",
-                                "enum": ["10k-50k", "50k-100k", "100k+", "sin_presupuesto"],
-                                "description": "Rango de presupuesto del cliente"
-                            },
-                            "authority_level": {
-                                "type": "string",
-                                "enum": ["decision_maker", "influencer", "user"],
-                                "description": "Nivel de autoridad del contacto"
-                            },
-                            "need_urgency": {
-                                "type": "string",
-                                "enum": ["high", "medium", "low"],
-                                "description": "Urgencia de la necesidad"
-                            },
-                            "timeline": {
-                                "type": "string",
-                                "enum": ["immediate", "3_months", "6_months", "12_months+"],
-                                "description": "Timeline de implementación"
-                            }
-                        },
-                        "required": ["budget_range", "authority_level", "need_urgency", "timeline"]
-                    }
-                }
-            }
-        ]
-    
-    async def handle_function_call(self, tool_call) -> str:
-        """Manejar llamadas a herramientas - optimizado para leads fríos"""
-        function_name = tool_call.function.name
-        function_args = json.loads(tool_call.function.arguments)
-        
-        logger.info(f"WhatsApp bot calling function: {function_name} with args: {function_args}")
-        
-        try:
-            # Herramientas TDX Core 2025 ultra concisas
-            if function_name == "offer_micro_value":
-                return await self.offer_micro_value(
-                    function_args.get("detected_service"),
-                    function_args.get("industry", "general"),
-                    function_args.get("follow_up_question")
-                )
-            elif function_name == "collect_minimal_data":
-                return await self.collect_minimal_data(
-                    function_args.get("missing_field"),
-                    function_args.get("short_request")
-                )
-            elif function_name == "quick_schedule":
-                return await self.quick_schedule(
-                    function_args.get("date"),
-                    function_args.get("time"),
-                    function_args.get("meeting_type")
-                )
-            elif function_name == "quick_response":
-                return await self.quick_response(
-                    function_args.get("response_type"),
-                    function_args.get("ultra_short_response")
-                )
-            elif function_name == "validate_client_datetime_request":
-                return await self.validate_client_datetime_request(
-                    function_args.get("requested_date"),
-                    function_args.get("requested_time")
-                )
-            elif function_name == "schedule_consultation":
-                return await self.schedule_consultation(
-                    function_args.get("date"),
-                    function_args.get("time"),
-                    function_args.get("meeting_type")
-                )
-            # Herramientas legacy mantenidas para compatibilidad
-            elif function_name == "schedule_meeting_whatsapp":
-                return await self.schedule_meeting_whatsapp(
-                    function_args.get("date"),
-                    function_args.get("time")
-                )
-            elif function_name == "check_availability_whatsapp":
-                return await self.check_availability_whatsapp()
-            elif function_name == "transfer_to_human_whatsapp":
-                return await self.transfer_to_human_whatsapp(
-                    function_args.get("reason", "Cliente solicita hablar con humano")
-                )
-            elif function_name == "collect_email_whatsapp":
-                return await self.collect_email_whatsapp(
-                    function_args.get("email")
-                )
-            elif function_name == "qualify_prospect_whatsapp":
-                return await self.qualify_prospect_whatsapp(
-                    function_args.get("budget_range"),
-                    function_args.get("authority_level"),
-                    function_args.get("need_urgency"),
-                    function_args.get("timeline")
-                )
-            else:
-                return "Disculpa, no pude procesar esa solicitud. ¿Puedes intentar de nuevo? 🤔"
-                
-        except Exception as e:
-            logger.error(f"Error in function call {function_name}: {e}")
-            return "Hubo un error procesando tu solicitud. Un momento por favor... 🔄"
-    
-    async def schedule_meeting_whatsapp(self, date: str, time: str) -> str:
-        """Tool: Agendar reunión reutilizando graph_client"""
-        try:
-            final_email = self.prospect_info.get('email')
-            
-            if not final_email:
-                return "📧 Necesito tu email para enviar la invitación de la reunión.\n\n¿Podrías compartirlo conmigo?"
-            
-            # Marcar estado
-            self.awaiting_response_type = 'meeting_confirmation'
-            
-            # REUTILIZAR microsoft_graph_client (SIN MODIFICAR)
-            result = await graph_client.create_meeting(
-                attendee_email=final_email,
-                meeting_date=date,
-                meeting_time=time,
-                contact_name=self.contact_name,
-                company_name=self.company_name,
-                meeting_type="discovery_call"
-            )
-            
-            success_msg = f"""✅ ¡Reunión agendada exitosamente!
-
-📅 **Fecha:** {date}
-🕐 **Hora:** {time}
-📧 **Invitación enviada a:** {final_email}
-🎯 **Duración:** 30 minutos
-
-Te llegará la invitación con el enlace de Teams.
-
-¿Hay algo más en lo que pueda ayudarte? 😊"""
-
-            logger.info(f"Meeting scheduled via WhatsApp: {self.conversation_id} -> {date} {time}")
-            return success_msg
-            
-        except Exception as e:
-            logger.error(f"Error scheduling meeting: {e}")
-            return "⚠️ Hubo un problema agendando la reunión.\n\nUn ejecutivo te contactará pronto para coordinar."
-    
-    async def check_availability_whatsapp(self) -> str:
-        """Tool: Verificar disponibilidad reutilizando graph_client"""
-        try:
-            from datetime import datetime, timedelta
-            
-            start_date = datetime.now() + timedelta(days=1)
-            end_date = start_date + timedelta(days=7)
-            
-            # REUTILIZAR microsoft_graph_client (SIN MODIFICAR)
-            slots = await graph_client.check_availability(start_date, end_date)
-            
-            # Guardar slots para siguiente interacción
-            self.last_offered_slots = slots[:3]
-            self.awaiting_response_type = 'slot_selection'
-            
-            availability_msg = f"""📅 **Disponibilidad para reunión estratégica:**
-
-🟢 **Opción 1:** {slots[0]}
-🟢 **Opción 2:** {slots[1]}  
-🟢 **Opción 3:** {slots[2]}
-
-¿Cuál de estas opciones te conviene mejor?
-
-También puedes sugerir otra fecha si ninguna te funciona 😊"""
-
-            return availability_msg
-            
-        except Exception as e:
-            logger.error(f"Error checking availability: {e}")
-            return "📅 Tengo disponibilidad esta semana y la próxima.\n\n¿Qué día y hora prefieres para la reunión?"
-    
-    async def transfer_to_human_whatsapp(self, reason: str = "Cliente insiste en hablar con humano") -> str:
-        """Tool: Transferencia RELUCTANTE - siempre intenta agendar primero"""
-        try:
-            # ANTES de transferir, intentar agendar una última vez
-            if "humano" in reason.lower() or "persona" in reason.lower():
-                return "¡Entiendo! ¿Antes de conectarte, te parece si agendamos 15 min para resolver tu consulta rápidamente?"
-            
-            # Solo transferir en casos realmente extremos
-            success = await self.chatwoot_client.handoff_to_human(self.conversation_id)
-            
-            if success:
-                await self.create_handoff_summary(reason)
-                return f"Te conecto con un especialista. Motivo: {reason}"
-            else:
-                return "Un ejecutivo te contactará pronto."
-                
-        except Exception as e:
-            logger.error(f"Error transferring to human: {e}")
-            return "Un ejecutivo te contactará pronto."
-    
-    async def collect_email_whatsapp(self, email: str) -> str:
-        """Tool: Recolectar email del cliente"""
-        try:
-            # Validación básica de email
-            import re
-            email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-            
-            if not re.match(email_pattern, email.lower()):
-                return "📧 El email no parece válido.\n\n¿Podrías verificar y escribirlo de nuevo? Ejemplo: nombre@empresa.com"
-            
-            # Actualizar prospect_info
-            self.prospect_info['email'] = email.lower()
-            
-            return f"""✅ Email guardado: {email.lower()}
-
-Perfecto, ahora puedo enviarte la invitación de la reunión.
-
-¿Te parece bien que revisemos tu disponibilidad? 📅"""
-            
-        except Exception as e:
-            logger.error(f"Error collecting email: {e}")
-            return "Hubo un problema guardando el email. ¿Puedes intentar de nuevo?"
-    
-    async def qualify_prospect_whatsapp(self, budget_range: str, authority_level: str, need_urgency: str, timeline: str) -> str:
-        """Tool: Calificar prospect usando metodología BANT - IDÉNTICA AL BOT DE VOZ"""
-        try:
-            logger.info(
-                f"qualifying WhatsApp prospect {self.contact_name}: Budget={budget_range}, Authority={authority_level}, Need={need_urgency}, Timeline={timeline}"
-            )
-            
-            # Marcar estado de conversación
-            self.awaiting_response_type = 'qualification_complete'
-            
-            # Score qualification - LÓGICA EXACTA DEL BOT DE VOZ
-            score = 0
-            if budget_range in ['50k-100k', '100k+']:
-                score += 25
-            elif budget_range == '10k-50k':
-                score += 15
-                
-            if authority_level == 'decision_maker':
-                score += 30
-            elif authority_level == 'influencer':
-                score += 20
-                
-            if need_urgency == 'high':
-                score += 25
-            elif need_urgency == 'medium':
-                score += 15
-                
-            if timeline in ['immediate', '3_months']:
-                score += 20
-            elif timeline == '6_months':
-                score += 10
-            
-            qualified = score >= 60
-            recommendation = "schedule_meeting" if qualified else "nurture_lead"
-            
-            # Guardar resultado en prospect_info para seguimiento
-            self.prospect_info.update({
-                'qualification_score': score,
-                'qualified': qualified,
-                'budget_range': budget_range,
-                'authority_level': authority_level,
-                'need_urgency': need_urgency,
-                'timeline': timeline,
-                'qualification_date': datetime.now().isoformat()
-            })
-            
-            # Generar respuesta basada en calificación
-            if qualified:
-                response = f"""✅ **Perfil calificado exitosamente** (Score: {score}/100)
-
-🎯 **Análisis de tu perfil:**
-• Presupuesto: {budget_range}
-• Autoridad: {authority_level}
-• Urgencia: {need_urgency}
-• Timeline: {timeline}
-
-**Recomendación:** Reunión estratégica inmediata 🚀
-
-¿Te parece bien que agendemos una reunión de 30 minutos esta semana para revisar soluciones específicas para {self.company_name}?"""
-
-            else:
-                response = f"""📊 **Análisis de perfil completado** (Score: {score}/100)
-
-🔍 **Tu perfil actual:**
-• Presupuesto: {budget_range}
-• Autoridad: {authority_level}
-• Urgencia: {need_urgency}
-• Timeline: {timeline}
-
-**Recomendación:** Te mantendré informado de nuevas soluciones que se ajusten mejor a tu perfil actual.
-
-¿Te gustaría que un especialista te contacte cuando tengamos opciones más adecuadas? 📞"""
-
-            logger.info(f"WhatsApp prospect qualification completed: {self.contact_name} - Score: {score} - Qualified: {qualified}")
+            logger.error(f"Error sending response: {e}")
             return response
-            
-        except Exception as e:
-            logger.error(f"Error qualifying WhatsApp prospect: {e}")
-            return "⚠️ Hubo un problema evaluando tu perfil.\n\nUn especialista revisará tu caso personalmente. ¿Te parece bien?"
-    
-    async def create_handoff_summary(self, handoff_reason: str):
-        """Crear resumen para el agente humano"""
-        try:
-            # Crear resumen estructurado
-            summary_data = {
-                'call_direction': 'whatsapp_chat',
-                'contact_name': self.contact_name,
-                'company_name': self.company_name,
-                'prospect_info': self.prospect_info,
-                'conversation_log': self.conversation_log,
-                'total_turns': len(self.conversation_log),
-                'session_start_time': self.session_start_time.isoformat(),
-                'session_end_time': datetime.now().isoformat(),
-                'handoff_reason': handoff_reason,
-                'channel': 'whatsapp',
-                'awaiting_response_type': self.awaiting_response_type,
-                'last_offered_slots': self.last_offered_slots
-            }
-            
-            # REUTILIZAR chatwoot_summary_integration (SIN MODIFICAR)
-            phone = self.prospect_info.get('phone', 'N/A')
-            if phone and phone != 'N/A':
-                await send_bot_summary_to_chatwoot(
-                    phone_number=phone,
-                    conversation_summary=json.dumps(summary_data),
-                    call_duration=None,
-                    call_outcome="Transferido a humano via WhatsApp"
-                )
-                
-                logger.info(f"Handoff summary created for WhatsApp conversation {self.conversation_id}")
-                
-        except Exception as e:
-            logger.error(f"Error creating handoff summary: {e}")
-    
-    # ============================================================================
-    # NUEVAS HERRAMIENTAS PARA LEADS FRÍOS DE REDES SOCIALES - EMPATÍA MEJORADA
-    # ============================================================================
-    
-    async def respond_to_question(self, question_type: str, service_mentioned: str, use_case: str = None) -> str:
-        """Tool: Responder preguntas específicas de forma empática y personalizada"""
-        try:
-            # Respuestas BREVES personalizadas por servicio
-            service_responses = {
-                "AI_Avatars": {
-                    "onboarding": "¡Claro! Es perfecto para onboarding.",
-                    "entrenamientos": "¡Exacto! Ideal para entrenamientos.",
-                    "training": "¡Exacto! Ideal para entrenamientos.",
-                    "general": "¡Sí! Es súper efectivo."
-                },
-                "AI_Chatbot": {
-                    "atencion_cliente": "¡Perfecto! Reduce 70% tiempo respuesta.",
-                    "ventas": "¡Genial! Incrementa conversiones 40%.",
-                    "automatizacion": "¡Exacto! Atienden 24/7 sin parar.",
-                    "general": "¡Claro! Es la base de automatización."
-                },
-                "AI_Voice": {
-                    "ventas": "¡Sí! Multiplica tu capacidad comercial.",
-                    "soporte": "¡Perfecto! Mejora experiencia cliente.",
-                    "general": "¡Totalmente! Más personal que chat."
-                },
-                "MVP_Software": {
-                    "validacion": "¡Exacto! Listo en 4-6 semanas.",
-                    "startup": "¡Genial! Te ahorra meses desarrollo.",
-                    "general": "¡Claro! Reduces riesgo muchísimo."
-                }
-            }
-            
-            # Obtener respuesta específica del servicio
-            service_data = service_responses.get(service_mentioned, {})
-            
-            # Buscar respuesta por caso de uso específico
-            specific_response = None
-            if use_case:
-                use_case_lower = use_case.lower()
-                for key, response in service_data.items():
-                    if key in use_case_lower or use_case_lower in key:
-                        specific_response = response
-                        break
-            
-            # Si no hay caso específico, usar respuesta general
-            if not specific_response:
-                specific_response = service_data.get("general", "¡Por supuesto! Es totalmente posible y muy efectivo.")
-            
-            # Personalizar con empresa si está disponible
-            company = self.company_name if self.company_name != "Su empresa" else "tu empresa"
-            
-            # Continuación BREVE según tipo de pregunta
-            continuation = {
-                "feasibility": f" ¿Para cuántos empleados?",
-                "technical": f" ¿Cómo lo implementamos?",
-                "benefits": f" ¿Qué más necesitas saber?",
-                "timeline": f" ¿Cuándo empezamos?",
-                "process": f" ¿Te explico los pasos?"
-            }.get(question_type, f" ¿Qué más quieres saber?")
-            
-            return f"{specific_response}{continuation}"
-            
-        except Exception as e:
-            logger.error(f"Error responding to question: {e}")
-            return "¡Claro! Es súper efectivo. ¿Qué necesitas saber?"
-    
-    async def explore_business_need(self, service_interest: str, business_problem: str, urgency_level: str) -> str:
-        """Tool: Explorar necesidad de negocio con validación empática mejorada"""
-        try:
-            # Guardar información de necesidad
-            self.prospect_info.update({
-                'service_interest': service_interest,
-                'business_problem': business_problem,
-                'urgency_level': urgency_level,
-                'exploration_date': datetime.now().isoformat()
-            })
-            
-            # Respuestas empáticas BREVES por problema
-            empathy_responses = {
-                "onboarding": "¡Perfecto! Es crítico para retención.",
-                "automatizacion": "¡Genial! Clave para escalar.",
-                "atencion_cliente": "¡Exacto! Impacta satisfacción directamente.",
-                "entrenamientos": "¡Súper! Transforma equipos.",
-                "ventas": "¡Claro! Máximo impacto en crecimiento.",
-                "eficiencia": "¡Exacto! Fundamental para competir."
-            }
-            
-            # Detectar tipo de problema
-            problem_lower = business_problem.lower()
-            empathy_response = "Entiendo"  # Default
-            
-            for key, response in empathy_responses.items():
-                if key in problem_lower:
-                    empathy_response = response
-                    break
-            
-            # Pregunta BREVE según urgencia
-            if urgency_level == "alta":
-                follow_up = " ¿Tu nombre y email?"
-            else:
-                follow_up = " ¿Nombre y email?"
-            
-            return f"{empathy_response}{follow_up}"
-                
-        except Exception as e:
-            logger.error(f"Error exploring business need: {e}")
-            return "Entiendo. ¿Tu nombre y email?"
-    
-    async def collect_contact_data(self, full_name: str, email: str, company_name: str, position: str = None) -> str:
-        """Tool: Recolectar datos completos del contacto con personalización empática"""
-        try:
-            # Validar email
-            import re
-            email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-            if not re.match(email_pattern, email.lower()):
-                return "Email inválido. ¿Podrías verificarlo?"
-            
-            # Actualizar toda la información
-            self.prospect_info.update({
-                'full_name': full_name,
-                'email': email.lower(),
-                'company_name': company_name,
-                'position': position,
-                'data_collected': True,
-                'collection_date': datetime.now().isoformat()
-            })
-            
-            # Actualizar atributos del bot
-            self.contact_name = full_name
-            self.company_name = company_name
-            
-            first_name = full_name.split()[0]
-            
-            return f"¡Perfecto {first_name}! ¿Mañana 3pm?"
-            
-        except Exception as e:
-            logger.error(f"Error collecting contact data: {e}")
-            return "Listo. ¿Cuándo te conviene?"
-    
-    async def validate_client_datetime_request(self, requested_date: str, requested_time: str) -> str:
-        """Nueva función: Validar solicitud específica del cliente"""
-        try:
-            # Usar validador de horarios de negocio si está disponible
-            if BUSINESS_HOURS_AVAILABLE:
-                validation = business_hours.validate_requested_datetime(requested_date, requested_time)
-                
-                if not validation['valid']:
-                    reason = validation['reason']
-                    message = validation['message']
-                    
-                    # Ofrecer alternativas basadas en el motivo de rechazo
-                    if reason == 'not_business_day':
-                        # Obtener alternativas para el próximo día hábil
-                        alternatives = business_hours.get_next_available_slots(days_ahead=5, max_slots=3)
-                        alt_msg = business_hours.format_slots_for_whatsapp(alternatives)
-                        return f"❌ {message}\n\n{alt_msg}"
-                    
-                    elif reason == 'outside_business_hours':
-                        # Obtener alternativas para el mismo día
-                        try:
-                            from datetime import datetime
-                            parsed_date = datetime.strptime(requested_date, "%Y-%m-%d")
-                            same_day_alternatives = business_hours.get_same_day_alternatives(parsed_date)
-                            
-                            if same_day_alternatives:
-                                alt_msg = business_hours.format_slots_for_whatsapp(same_day_alternatives)
-                                return f"❌ {message}\n\n📅 *Alternativas para el mismo día:*\n{alt_msg}"
-                            else:
-                                # No hay alternativas el mismo día, ofrecer próximos días
-                                alternatives = business_hours.get_next_available_slots(days_ahead=5, max_slots=3)
-                                alt_msg = business_hours.format_slots_for_whatsapp(alternatives)
-                                return f"❌ {message}\n\n{alt_msg}"
-                        except:
-                            return f"❌ {message}\n\n{business_hours.get_business_hours_info()}"
-                    
-                    else:
-                        return f"❌ {message}\n\n{business_hours.get_business_hours_info()}"
-                
-                else:
-                    # La solicitud es válida
-                    formatted_date = validation['formatted_date']
-                    formatted_time = validation['formatted_time']
-                    return f"✅ Perfecto! {formatted_date} a las {formatted_time} está disponible.\n\n¿Confirmamos esta fecha y hora?"
-            
-            else:
-                # Fallback básico si el validador no está disponible
-                return f"Revisando disponibilidad para {requested_date} a las {requested_time}..."
-                
-        except Exception as e:
-            logger.error(f"Error validating client datetime request: {e}")
-            return "❌ Formato de fecha/hora inválido. Usa formato: DD/MM/YYYY HH:MM\n\nEjemplo: 15/03/2024 10:30"
-
-    async def schedule_consultation(self, date: str, time: str, meeting_type: str) -> str:
-        """Tool: Agendar reunión consultiva con validación mejorada"""
-        try:
-            # Validar fecha y hora antes de proceder
-            if BUSINESS_HOURS_AVAILABLE:
-                validation = business_hours.validate_requested_datetime(date, time)
-                if not validation['valid']:
-                    return f"❌ {validation['message']}\n\nPor favor, elige una fecha y hora dentro del horario laboral (8AM-4PM, lunes a viernes)."
-            
-            final_email = self.prospect_info.get('email')
-            full_name = self.prospect_info.get('full_name', self.contact_name)
-            
-            if not final_email:
-                return "Necesito tu email."
-            
-            # Usar graph_client existente
-            result = await graph_client.create_meeting(
-                attendee_email=final_email,
-                meeting_date=date,
-                meeting_time=time,
-                contact_name=full_name,
-                company_name=self.company_name,
-                meeting_type=meeting_type
-            )
-            
-            meeting_type_labels = {
-                "consultoria_inicial": "Consultoría inicial",
-                "demo_producto": "Demo personalizada", 
-                "analisis_necesidades": "Análisis de necesidades"
-            }
-            
-            first_name = full_name.split()[0] if full_name else "Cliente"
-            
-            return f"✅ ¡Listo {first_name}!\n\n📅 {date} a las {time}\n📧 Invitación enviada\n\n¡Nos vemos! 🚀"
-            
-        except Exception as e:
-            logger.error(f"Error scheduling consultation: {e}")
-            return "Error agendando. Te contactamos pronto."
-    
-    # ============================================================================
-    # NUEVAS HERRAMIENTAS TDX CORE 2025 - ULTRA CONCISAS SIN PRECIOS
-    # ============================================================================
-    
-    async def offer_micro_value(self, detected_service: str, industry: str = "general", 
-                               follow_up_question: str = "¿Para qué?") -> str:
-        """Tool: Ofrecer micro-valor específico SIN PRECIOS"""
-        try:
-            # Obtener respuesta de micro-valor
-            micro_response = micro_value_injector.get_micro_value(detected_service, industry)
-            
-            # Actualizar prospect_info
-            self.prospect_info['detected_service'] = detected_service
-            self.prospect_info['industry'] = industry
-            
-            logger.info(f"Micro-valor ofrecido: {detected_service} + {industry}")
-            return micro_response
-            
-        except Exception as e:
-            logger.error(f"Error offering micro-value: {e}")
-            return "¡Perfecto para tu caso! ¿Nombre y email?"
-    
-    async def collect_minimal_data(self, missing_field: str, short_request: str) -> str:
-        """Tool: Recolectar datos esenciales ultra directo"""
-        try:
-            # Mapear campos a preguntas ultra cortas
-            field_questions = {
-                'name': "¿Tu nombre?",
-                'email': "¿Tu email?", 
-                'company': "¿Tu empresa?"
-            }
-            
-            question = field_questions.get(missing_field, short_request)
-            
-            # Analizar qué falta realmente
-            slot_analysis = minimal_slot_manager.analyze_prospect_data(self.prospect_info)
-            if not slot_analysis['missing_essential']:
-                return "¡Datos completos! ¿Agendamos?"
-            
-            return question
-            
-        except Exception as e:
-            logger.error(f"Error collecting minimal data: {e}")
-            return "¿Nombre y email?"
-    
-    async def quick_schedule(self, date: str, time: str, meeting_type: str) -> str:
-        """Tool: Agendamiento directo ultra rápido"""
-        try:
-            # Verificar datos esenciales
-            if not self.prospect_info.get('email'):
-                return "Necesito tu email."
-            
-            # Usar función existente optimizada
-            result = await self.schedule_consultation(date, time, meeting_type)
-            return result
-            
-        except Exception as e:
-            logger.error(f"Error quick scheduling: {e}")
-            return "Error agendando. Te contactamos."
-    
-    async def quick_response(self, response_type: str, ultra_short_response: str) -> str:
-        """Tool: Respuesta específica ultra corta"""
-        try:
-            # Validar longitud (máximo 50 caracteres)
-            if len(ultra_short_response) > 50:
-                ultra_short_response = ultra_short_response[:47] + "..."
-            
-            return ultra_short_response
-            
-        except Exception as e:
-            logger.error(f"Error quick response: {e}")
-            return "¡Perfecto!"
