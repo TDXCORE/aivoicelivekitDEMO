@@ -21,20 +21,20 @@ class MicroValueInjector:
         """Cargar respuestas ultra cortas por servicio e industria"""
         return {
             'AI_GENERAL': {
-                'general': "¡Tenemos 5 servicios IA! ¿Cuál interesa?",
-                'salud': "¡IA para salud! Automatización completa. ¿Qué necesitas?",
-                'ecommerce': "¡IA comercial! 50% más ventas. ¿Tu necesidad?",
-                'educacion': "¡IA educativa! 24/7 disponible. ¿Para qué?",
-                'fintech': "¡IA financiera! Automatiza procesos. ¿Cuál?",
-                'startup': "¡IA startup! Acelera crecimiento. ¿Tu reto?"
+                'general': "¡Perfecto! 🤖 Tenemos 5 servicios IA increíbles: Chatbot, Voice, Video, Assistant y Desarrollo. ¿Cuál te interesa más?",
+                'salud': "¡Excelente! 🏥 IA especializada para salud: automatización completa. ¿Qué necesitan mejorar?",
+                'ecommerce': "¡Genial! 🛒 IA comercial: 50% más ventas automáticas. ¿Cuál es tu prioridad?",
+                'educacion': "¡Perfecto! 📚 IA educativa: disponible 24/7 para estudiantes. ¿Para qué lo necesitan?",
+                'fintech': "¡Ideal! 💰 IA financiera: automatiza todos los procesos. ¿Cuál es más urgente?",
+                'startup': "¡Excelente! 🚀 IA para startups: acelera crecimiento exponencial. ¿Cuál es tu reto principal?"
             },
             'AI_CHATBOT': {
-                'general': "¡Perfecto! Reduce 70% tiempo. ¿Cuántos usuarios?",
-                'salud': "¡Ideal! Agenda automático. ¿Cuántos pacientes?",
-                'ecommerce': "¡Genial! 40% más ventas. ¿Cuántos productos?",
-                'educacion': "¡Perfecto! Resuelve dudas 24/7. ¿Cuántos estudiantes?",
-                'restaurante': "¡Ideal! Pedidos automáticos. ¿Cuántas mesas?",
-                'inmobiliaria': "¡Genial! Califica leads automático. ¿Cuántas propiedades?"
+                'general': "¡Perfecto! Reduce 70% tiempo respuesta 😊 ¿Para cuántos usuarios?",
+                'salud': "¡Ideal para salud! Agenda automático 🏥 ¿Cuántos pacientes atienden?",
+                'ecommerce': "¡Genial! 40% más ventas automáticas 🛒 ¿Cuántos productos manejan?",
+                'educacion': "¡Perfecto! Resuelve dudas 24/7 📚 ¿Cuántos estudiantes tienen?",
+                'restaurante': "¡Ideal! Pedidos automáticos 🍕 ¿Cuántas mesas atienden?",
+                'inmobiliaria': "¡Genial! Califica leads automático 🏠 ¿Cuántas propiedades manejan?"
             },
             'AI_VOICE': {
                 'general': "¡Excelente! 60% mejor conversión. ¿Ventas?",

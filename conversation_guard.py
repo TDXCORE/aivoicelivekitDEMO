@@ -103,7 +103,16 @@ class ConversationGuard:
             # Verificar longitud de conversación
             if len(conversation_log) > self.max_conversation_length:
                 logger.info(f"Conversación larga detectada ({len(conversation_log)} intercambios), forzando agendamiento")
-                return "Conversación larga. ¿Agendamos llamada?"
+                
+                # Verificar si hay confirmación de agendamiento en mensajes recientes
+                recent_messages = [entry.get('content', '').lower() for entry in conversation_log[-3:]]
+                confirmation_keywords = ['si', 'sí', 'yes', 'agendemos', 'dale', 'ok', 'claro', 'perfecto', 'genial']
+                
+                if any(any(keyword in msg for keyword in confirmation_keywords) for msg in recent_messages):
+                    # Usuario ya confirmó, no repetir la pregunta
+                    return "Perfecto. ¿Qué día y hora te conviene?"
+                else:
+                    return "Conversación larga. ¿Agendamos llamada?"
             
             # Verificar patrones problemáticos
             if self._is_problematic_response(response):

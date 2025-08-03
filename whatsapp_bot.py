@@ -185,23 +185,43 @@ class TDXWhatsAppBot:
                         })
                         return micro_response
             
-            # 6. VERIFICACIÓN DATOS COMPLETOS PARA AGENDAR
+            # 6. DETECCIÓN DE CONFIRMACIÓN DE AGENDAMIENTO
+            confirmation_keywords = ['si', 'sí', 'yes', 'agendemos', 'dale', 'ok', 'claro', 'perfecto', 'genial']
+            if any(keyword in message_content.lower() for keyword in confirmation_keywords):
+                # Si hay datos completos, proceder con agendamiento
+                if SLOT_MANAGER_AVAILABLE:
+                    slot_analysis = minimal_slot_manager.analyze_prospect_data(self.prospect_info)
+                    if slot_analysis['ready_to_schedule']:
+                        schedule_triggered = await self.check_automatic_schedule_keywords(message_content)
+                        if schedule_triggered:
+                            return schedule_triggered
+                        # Si no hay tiempo específico, ofrecer disponibilidad
+                        availability = await self.check_availability_whatsapp()
+                        return availability
+
+            # 7. VERIFICACIÓN DATOS COMPLETOS PARA CALIFICAR
             if SLOT_MANAGER_AVAILABLE:
                 slot_analysis = minimal_slot_manager.analyze_prospect_data(self.prospect_info)
-                if slot_analysis['ready_to_schedule']:
-                    # Datos completos, proceder con agendamiento automático
-                    schedule_triggered = await self.check_automatic_schedule_keywords(message_content)
-                    if schedule_triggered:
-                        return schedule_triggered
+                if slot_analysis['ready_to_schedule'] and not self.prospect_info.get('qualified'):
+                    # Datos completos pero no calificado - iniciar calificación empática
+                    qualification_question = self._get_empathetic_qualification_question()
+                    await self.send_response_with_ux(qualification_question)
+                    self.conversation_log.append({
+                        'turn': len(self.conversation_log) + 1,
+                        'type': 'assistant_message',
+                        'content': qualification_question,
+                        'timestamp': datetime.now().isoformat()
+                    })
+                    return qualification_question
             
-            # 7. FLUJO OPENAI OPTIMIZADO
+            # 8. FLUJO OPENAI OPTIMIZADO
             response = await self.generate_contextual_response(message_content)
             
-            # 8. VERIFICAR LONGITUD ULTRA CORTA (200 chars max)
+            # 9. VERIFICAR LONGITUD ULTRA CORTA (200 chars max)
             if len(response) > 200:
                 response = response[:190] + "..."
             
-            # 9. ANTI-LOOPS GUARD
+            # 10. ANTI-LOOPS GUARD
             if CONVERSATION_GUARD_AVAILABLE:
                 response = conversation_guard.check_for_loops(response, str(self.conversation_id), self.conversation_log)
             
@@ -226,6 +246,21 @@ class TDXWhatsAppBot:
                 self.conversation_id, error_response, self.user_id
             )
             return error_response
+    
+    def _get_empathetic_qualification_question(self) -> str:
+        """Generar pregunta de calificación empática basada en el servicio detectado"""
+        detected_service = self.prospect_info.get('detected_service', '')
+        company_name = self.prospect_info.get('company_name', 'tu empresa')
+        
+        qualification_questions = {
+            'AI_CHATBOT': f"¡Perfecto {self.contact_name}! Para {company_name}, ¿cuántos usuarios atienden al día? ¿Es para reducir tiempo de respuesta?",
+            'AI_VOICE': f"¡Excelente elección! En {company_name}, ¿necesitan automatizar ventas o soporte? ¿Cuántas llamadas manejan?",
+            'AI_GENERAL': f"¡Genial {self.contact_name}! Para {company_name}, ¿qué proceso necesitan automatizar más urgente?",
+            'AI_ASSISTANT_WHATSAPP': f"¡Perfecto! En {company_name}, ¿cuántos mensajes WhatsApp reciben al día?",
+            'AI_VIDEO': f"¡Ideal {self.contact_name}! Para {company_name}, ¿es para onboarding o marketing?"
+        }
+        
+        return qualification_questions.get(detected_service, f"¡Perfecto {self.contact_name}! ¿Cuál es tu mayor reto en {company_name}?")
     
     def _detect_price_inquiry(self, message: str) -> bool:
         """Detectar consultas sobre precios - fallback si intent_classifier no está disponible"""
@@ -274,16 +309,76 @@ class TDXWhatsAppBot:
         try:
             message_lower = message_content.lower()
             
-            # Keywords para agendamiento directo con fecha/hora
+            # Procesamiento directo de formatos comunes de fecha/hora
+            date_time_patterns = [
+                (r'lunes\s+(\d+)pm', 'lunes', r'\1:00 PM'),
+                (r'martes\s+(\d+)pm', 'martes', r'\1:00 PM'),
+                (r'miércoles\s+(\d+)pm', 'miércoles', r'\1:00 PM'),
+                (r'jueves\s+(\d+)pm', 'jueves', r'\1:00 PM'),
+                (r'viernes\s+(\d+)pm', 'viernes', r'\1:00 PM'),
+                (r'(\d+)pm', 'hoy', r'\1:00 PM'),
+                (r'(\d+)am', 'hoy', r'\1:00 AM'),
+                (r'mañana\s+(\d+)', 'mañana', r'\1:00'),
+            ]
+            
+            import re
+            from datetime import datetime, timedelta
+            
+            for pattern, day_hint, time_format in date_time_patterns:
+                match = re.search(pattern, message_lower)
+                if match:
+                    # Extraer hora
+                    hour = match.group(1)
+                    time_str = time_format.replace(r'\1', hour)
+                    
+                    # Determinar fecha
+                    today = datetime.now()
+                    if day_hint == 'lunes':
+                        days_ahead = (0 - today.weekday()) % 7
+                        if days_ahead == 0:  # Si es lunes hoy, agendar para el próximo lunes
+                            days_ahead = 7
+                        target_date = today + timedelta(days=days_ahead)
+                    elif day_hint == 'martes':
+                        days_ahead = (1 - today.weekday()) % 7
+                        if days_ahead == 0:
+                            days_ahead = 7
+                        target_date = today + timedelta(days=days_ahead)
+                    elif day_hint == 'miércoles':
+                        days_ahead = (2 - today.weekday()) % 7
+                        if days_ahead == 0:
+                            days_ahead = 7
+                        target_date = today + timedelta(days=days_ahead)
+                    elif day_hint == 'jueves':
+                        days_ahead = (3 - today.weekday()) % 7
+                        if days_ahead == 0:
+                            days_ahead = 7
+                        target_date = today + timedelta(days=days_ahead)
+                    elif day_hint == 'viernes':
+                        days_ahead = (4 - today.weekday()) % 7
+                        if days_ahead == 0:
+                            days_ahead = 7
+                        target_date = today + timedelta(days=days_ahead)
+                    elif day_hint == 'mañana':
+                        target_date = today + timedelta(days=1)
+                    else:  # hoy
+                        target_date = today
+                    
+                    date_str = target_date.strftime('%Y-%m-%d')
+                    
+                    logger.info(f"🎯 Direct scheduling: {day_hint} {time_str} = {date_str} {time_str}")
+                    
+                    # Usar schedule_consultation directamente
+                    result = await self.schedule_consultation(date_str, time_str, "discovery_call")
+                    return result
+            
+            # Si no coincide con patrones, dejar que OpenAI lo procese
             time_indicators = ["mañana", "lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo", 
-                             "am", "pm", ":", "hora", "hoy", "tarde", "noche",
-                             "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"]
+                             "am", "pm", ":", "hora", "hoy", "tarde", "noche"]
             
             has_specific_time = any(indicator in message_lower for indicator in time_indicators)
             
-            # Si tiene tiempo específico, dejar que OpenAI lo procese con schedule_consultation
             if has_specific_time:
-                logger.info(f"⏰ Scheduling with specific time detected: {message_content[:50]} - passing to OpenAI")
+                logger.info(f"⏰ Complex scheduling pattern detected: {message_content[:50]} - passing to OpenAI")
                 return None  # OpenAI usará schedule_consultation
             
             # Para leads fríos: solo agendar si ya tienen datos completos
