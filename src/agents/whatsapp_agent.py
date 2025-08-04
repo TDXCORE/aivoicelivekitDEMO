@@ -188,7 +188,7 @@ class TDXWhatsAppAgentV2:
         micro_value = ""
         if service_result['service'] != 'UNKNOWN' and service_result['confidence'] > 0.5:
             industry = getattr(intent_result, 'industry', 'general') or 'general'
-            micro_value = self.value_injector.generate_micro_value(
+            micro_value = self.value_injector.get_micro_value(
                 service_result['service'], industry, message
             )
         

@@ -64,7 +64,8 @@ class WhatsAppWebhookHandler:
             
             # En la estructura real de Chatwoot, los datos del mensaje están en el nivel superior
             message_type = webhook_data.get('message_type')
-            content = webhook_data.get('content', '').strip()
+            content = webhook_data.get('content') or ''
+            content = content.strip() if content else ''
             
             logger.info(f"🔍 PROCESSABLE DEBUG - Message type: {message_type}")
             logger.info(f"🔍 PROCESSABLE DEBUG - Content: '{content}'")

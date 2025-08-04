@@ -14,7 +14,36 @@ El bot estaba entrando en un **loop infinito** cuando el usuario proporcionaba s
 
 ## ✅ CORRECCIONES IMPLEMENTADAS
 
-### 1. **ConversationGuard - Detección de Loop de Teléfono**
+### 1. **Webhook Handler - Error NoneType**
+**Archivo:** `src/webhooks/whatsapp_handler.py`
+
+**Problema:** Error `'NoneType' object has no attribute 'strip'` cuando el contenido del webhook era `None`.
+
+**Solución:**
+```python
+# ANTES (problemático):
+content = webhook_data.get('content', '').strip()
+
+# DESPUÉS (corregido):
+content = webhook_data.get('content') or ''
+content = content.strip() if content else ''
+```
+
+### 2. **MicroValueInjector - Método Incorrecto**
+**Archivo:** `src/agents/whatsapp_agent.py`
+
+**Problema:** Error `'MicroValueInjector' object has no attribute 'generate_micro_value'` - el método correcto es `get_micro_value`.
+
+**Solución:**
+```python
+# ANTES (problemático):
+micro_value = self.value_injector.generate_micro_value(...)
+
+# DESPUÉS (corregido):
+micro_value = self.value_injector.get_micro_value(...)
+```
+
+### 3. **ConversationGuard - Detección de Loop de Teléfono**
 **Archivo:** `src/ai/conversation_guard.py`
 
 **Problema:** El ConversationGuard detectaba correctamente que el usuario ya había proporcionado el teléfono, pero aplicaba un fallback que **repetía la misma pregunta**.
