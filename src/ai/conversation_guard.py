@@ -357,6 +357,13 @@ class ConversationGuard:
                         'fallback': 'Perfecto. Ya tenemos todo listo. Te contactaremos pronto para coordinar la demo de automatización.'
                     }
             
+            # CASO CRÍTICO: NO INTERFERIR cuando el bot está mostrando opciones de calendario
+            if any(keyword in current_response.lower() for keyword in ['opción 1', 'opción 2', 'opción 3', 'horarios disponibles']):
+                return {
+                    'reason': 'Bot mostrando opciones de calendario - no interferir',
+                    'fallback': None  # Permitir que el flujo normal continúe
+                }
+            
             # CASO 2: Repetir pregunta general sobre servicios después de que el usuario especificó
             service_keywords = ['automatización', 'automatizar', 'chatbot', 'finanzas', 'conciliación']
             service_mentioned = any(

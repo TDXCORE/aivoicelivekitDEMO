@@ -380,6 +380,25 @@ Responde al siguiente mensaje del cliente:"""
             )
             return options_msg
         
+        # CASO 2B: Acabamos de completar todos los datos - mostrar opciones inmediatamente
+        if (self.collected_data['email'] and self.collected_data['phone'] and 
+            self.collected_data['name'] and self.collected_data.get('service_interest') and
+            not self.collected_data['calendar_options_shown']):
+            
+            # Forzar actualización de all_data_complete
+            self.collected_data['all_data_complete'] = True
+            
+            slots = self.calendar_manager.get_next_available_slots(3)
+            self.current_calendar_options = slots
+            self.collected_data['calendar_options_shown'] = True
+            
+            options_msg = self.calendar_manager.format_options_message(
+                slots, 
+                self.collected_data['name'], 
+                self.collected_data['service_interest']
+            )
+            return options_msg
+        
         # CASO 3: Usuario está respondiendo a las opciones de calendario
         if self.collected_data['calendar_options_shown'] and self.current_calendar_options:
             # Intentar parsear la selección
