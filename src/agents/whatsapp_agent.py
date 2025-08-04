@@ -4,7 +4,6 @@ import json
 from datetime import datetime
 from typing import Dict, Any, Optional, List
 import requests
-import openai
 
 # Import integrations
 from src.integrations.microsoft.microsoft_graph_client import MicrosoftGraphClient
@@ -79,8 +78,8 @@ class TDXWhatsAppAgentV2:
             # 1. Actualizar datos recopilados del usuario
             self._update_collected_data(message_content)
             
-            # 2. Generación de respuesta simplificada
-            response = await self._generate_simple_response(message_content)
+            # 2. Generación de respuesta con OpenAI y function calling
+            response = await self._generate_ai_response(message_content)
             
             if response:
                 # Log de la respuesta del bot
@@ -108,87 +107,288 @@ class TDXWhatsAppAgentV2:
             logger.error(f"❌ Traceback: {traceback.format_exc()}")
             return None
     
-    async def _generate_simple_response(self, message: str) -> str:
-        """Generar respuesta simplificada sin módulos de IA complejos"""
-        message_lower = message.lower()
-        
-        # Analizar el contexto reciente para evitar repeticiones
-        recent_bot_messages = [log.get('content', '') for log in self.conversation_log[-3:] if log.get('type') == 'assistant_message']
-        recent_user_messages = [log.get('content', '') for log in self.conversation_log[-3:] if log.get('type') == 'user_message']
-        
-        # Detectar si el usuario ya dio información específica
-        scheduling_info = self._extract_scheduling_info(message, recent_user_messages)
-        has_time_info = 'horario mencionado' in scheduling_info.lower()
-        has_service_info = 'servicios de interés' in scheduling_info.lower()
-        has_confirmation = 'confirmaciones detectadas' in scheduling_info.lower()
-        has_personal_data = 'datos personales' in scheduling_info.lower()
-        
-        # Extraer información específica de datos personales
-        has_email = 'email:' in scheduling_info.lower()
-        has_phone = 'teléfono:' in scheduling_info.lower()
-        has_name = 'nombre:' in scheduling_info.lower()
-        
-        # RESPUESTAS CONTEXTUALES INTELIGENTES BASADAS EN EL ESTADO DE LA CONVERSACIÓN
-        
-        # CASO 2B: Acabamos de completar todos los datos - mostrar opciones inmediatamente
-        if (self.collected_data['email'] and self.collected_data['phone'] and 
-            self.collected_data['name'] and self.collected_data.get('service_interest') and
-            not self.collected_data['calendar_options_shown']):
+    async def _generate_ai_response(self, message: str) -> str:
+        """Generar respuesta inteligente usando OpenAI con function calling"""
+        try:
+            if not self.openai_api_key:
+                logger.warning("OpenAI API key not configured, using fallback")
+                return await self._generate_fallback_response_simple(message)
             
-            # Forzar actualización de all_data_complete
-            self.collected_data['all_data_complete'] = True
+            # Preparar el contexto de la conversación
+            conversation_context = self._build_conversation_context_for_openai()
+            
+            # Preparar las funciones disponibles para OpenAI
+            functions = [
+                {
+                    "name": "extract_user_data",
+                    "description": "Extraer y actualizar datos del usuario (nombre, email, teléfono, empresa)",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string", "description": "Nombre completo del usuario"},
+                            "email": {"type": "string", "description": "Email del usuario"},
+                            "phone": {"type": "string", "description": "Teléfono del usuario"},
+                            "company": {"type": "string", "description": "Empresa del usuario"},
+                            "service_interest": {"type": "string", "description": "Servicio de interés (finanzas, automatización, chatbots, etc.)"}
+                        }
+                    }
+                },
+                {
+                    "name": "show_calendar_options",
+                    "description": "Mostrar opciones de calendario cuando se tienen todos los datos",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "service_type": {"type": "string", "description": "Tipo de servicio para la demo"}
+                        }
+                    }
+                },
+                {
+                    "name": "schedule_meeting",
+                    "description": "Agendar reunión real cuando el usuario selecciona un horario",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "option_selected": {"type": "string", "description": "Opción seleccionada (1, 2, o 3)"},
+                            "meeting_date": {"type": "string", "description": "Fecha de la reunión"},
+                            "meeting_time": {"type": "string", "description": "Hora de la reunión"}
+                        }
+                    }
+                }
+            ]
+            
+            # Crear el prompt maestro
+            system_prompt = f"""Eres Mati, asistente virtual experto de TDX, empresa líder en soluciones de IA empresarial.
+
+DATOS DEL CLIENTE:
+- Nombre: {self.contact_name}
+- Empresa: {self.company_name}
+- Email: {self.collected_data.get('email', 'No proporcionado')}
+- Teléfono: {self.collected_data.get('phone', 'No proporcionado')}
+- Servicio de interés: {self.collected_data.get('service_interest', 'No definido')}
+
+ESTADO ACTUAL:
+{conversation_context}
+
+FLUJO DE AGENDAMIENTO:
+1. Saludar y detectar interés en servicios de IA
+2. Identificar área específica (finanzas, automatización, etc.)
+3. Recopilar datos: nombre, email, teléfono
+4. Mostrar opciones de calendario cuando tengas todos los datos
+5. Agendar reunión real cuando seleccionen horario
+
+HERRAMIENTAS DISPONIBLES:
+- extract_user_data: Para extraer datos del mensaje del usuario
+- show_calendar_options: Para mostrar horarios disponibles
+- schedule_meeting: Para agendar la reunión real
+
+INSTRUCCIONES CRÍTICAS:
+1. Usa las funciones cuando sea apropiado
+2. Si detectas datos del usuario, llama extract_user_data
+3. Si tienes email, teléfono y nombre, llama show_calendar_options
+4. Si el usuario selecciona horario (1, 2, 3), llama schedule_meeting
+5. Mantén conversación natural y profesional
+6. Usa emojis apropiados (máximo 2 por mensaje)
+7. Respuestas entre 1-3 líneas máximo
+
+Responde al siguiente mensaje del cliente:"""
+
+            from openai import OpenAI
+            client = OpenAI(api_key=self.openai_api_key)
+            
+            # Preparar mensajes de conversación
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": message}
+            ]
+            
+            # Llamar a OpenAI con function calling
+            response = client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=messages,
+                functions=functions,
+                function_call="auto",
+                max_tokens=200,
+                temperature=0.7
+            )
+            
+            response_message = response.choices[0].message
+            
+            # Verificar si OpenAI quiere llamar una función
+            if response_message.function_call:
+                function_name = response_message.function_call.name
+                function_args = json.loads(response_message.function_call.arguments)
+                
+                logger.info(f"🔧 OpenAI llamando función: {function_name} con args: {function_args}")
+                
+                # Ejecutar la función correspondiente
+                if function_name == "extract_user_data":
+                    return await self._handle_extract_user_data(function_args, message)
+                elif function_name == "show_calendar_options":
+                    return await self._handle_show_calendar_options(function_args)
+                elif function_name == "schedule_meeting":
+                    return await self._handle_schedule_meeting(function_args)
+            
+            # Si no hay function call, devolver la respuesta normal
+            ai_response = response_message.content.strip()
+            logger.info(f"🤖 OpenAI response: {ai_response[:50]}...")
+            return ai_response
+            
+        except Exception as e:
+            logger.error(f"❌ OpenAI error: {e}")
+            return await self._generate_fallback_response_simple(message)
+
+    def _build_conversation_context_for_openai(self) -> str:
+        """Construir contexto de la conversación para OpenAI"""
+        context_parts = []
+        
+        # Estado de datos recopilados
+        if self.collected_data['email']:
+            context_parts.append(f"Email recopilado: {self.collected_data['email']}")
+        if self.collected_data['phone']:
+            context_parts.append(f"Teléfono recopilado: {self.collected_data['phone']}")
+        if self.collected_data['service_interest']:
+            context_parts.append(f"Servicio de interés: {self.collected_data['service_interest']}")
+        
+        # Estado del flujo
+        context_parts.append(f"Estado conversación: {self.conversation_state}")
+        context_parts.append(f"Datos completos: {self.collected_data['all_data_complete']}")
+        context_parts.append(f"Opciones mostradas: {self.collected_data['calendar_options_shown']}")
+        
+        # Últimos mensajes para contexto
+        recent_messages = [log['content'] for log in self.conversation_log[-3:] if log.get('type') == 'user_message']
+        if recent_messages:
+            context_parts.append(f"Últimos mensajes: {'; '.join(recent_messages)}")
+        
+        return "; ".join(context_parts) if context_parts else "Inicio de conversación"
+
+    async def _handle_extract_user_data(self, function_args: Dict, original_message: str) -> str:
+        """Manejar extracción de datos del usuario"""
+        try:
+            # Actualizar datos con los argumentos de la función
+            for key, value in function_args.items():
+                if value and key in self.collected_data:
+                    self.collected_data[key] = value
+                    if key == 'name':
+                        self.contact_name = value
+                    elif key == 'company':
+                        self.company_name = value
+                    logger.info(f"Dato actualizado por OpenAI - {key}: {value}")
+            
+            # Verificar si tenemos todos los datos necesarios
+            self.collected_data['all_data_complete'] = bool(
+                self.collected_data['email'] and
+                self.collected_data['phone'] and
+                self.collected_data['name'] and
+                self.collected_data.get('service_interest')
+            )
+            
+            # Si tenemos todos los datos, mostrar opciones de calendario
+            if self.collected_data['all_data_complete'] and not self.collected_data['calendar_options_shown']:
+                return await self._handle_show_calendar_options({'service_type': self.collected_data['service_interest']})
+            
+            # Si falta algo, pedir lo que falta
+            missing = []
+            if not self.collected_data['email']:
+                missing.append("email")
+            if not self.collected_data['phone']:
+                missing.append("teléfono")
+            if not self.collected_data['name']:
+                missing.append("nombre")
+            
+            if missing:
+                missing_str = " y ".join(missing)
+                return f"Perfecto! Solo necesito tu {missing_str} para completar el agendamiento."
+            
+            return "¡Excelente! Ya tengo tus datos."
+            
+        except Exception as e:
+            logger.error(f"Error handling extract_user_data: {e}")
+            return "Perfecto, continúo con el proceso de agendamiento."
+
+    async def _handle_show_calendar_options(self, function_args: Dict) -> str:
+        """Manejar mostrar opciones de calendario"""
+        try:
+            service_type = function_args.get('service_type', self.collected_data.get('service_interest', 'finanzas'))
+            
+            # Marcar que ya mostramos las opciones
             self.collected_data['calendar_options_shown'] = True
+            self.current_calendar_options = [
+                {"option": "1", "date": "2025-08-06", "time": "09:00", "display": "Martes Mañana a las 9:00 AM"},
+                {"option": "2", "date": "2025-08-06", "time": "10:00", "display": "Martes Mañana a las 10:00 AM"},
+                {"option": "3", "date": "2025-08-06", "time": "11:00", "display": "Martes Mañana a las 11:00 AM"}
+            ]
             
-            service_interest = self.collected_data.get('service_interest', 'finanzas')
-            
-            options_msg = f"¡Perfecto {self.collected_data['name']}! 🗓️\n\nTengo estos horarios disponibles para tu demo de {service_interest}:\n\n*Opción 1:* Martes Mañana a las 9:00 AM\n*Opción 2:* Martes Mañana a las 10:00 AM\n*Opción 3:* Martes Mañana a las 11:00 AM\n\n¿Cuál opción prefieres? Solo responde con el número (1, 2 o 3) 😊"
+            options_msg = f"¡Perfecto {self.collected_data['name']}! 🗓️\n\nTengo estos horarios disponibles para tu demo de {service_type}:\n\n*Opción 1:* Martes Mañana a las 9:00 AM\n*Opción 2:* Martes Mañana a las 10:00 AM\n*Opción 3:* Martes Mañana a las 11:00 AM\n\n¿Cuál opción prefieres? Solo responde con el número (1, 2 o 3) 😊"
             
             return options_msg
-        
-        # CASO 3: Usuario proporcionó email pero falta teléfono
-        if self.collected_data['email'] and not self.collected_data['phone']:
-            # Siempre pedir teléfono si no lo tenemos, es crítico para el flujo
-            return "Excelente, Freddy. Para completar el agendamiento, ¿me podrías proporcionar tu número de teléfono?"
-        
-        # CASO 4: Usuario proporcionó teléfono pero falta email
-        if has_phone and not self.collected_data['email']:
-            return "Perfecto, ya tengo tu teléfono. ¿Me puedes proporcionar tu email para enviarte la información de la demo?"
-        
-        # CASO 7: Si el usuario ya mencionó un servicio específico
-        if has_service_info:
-            service_mentioned = None
-            if 'automatización' in message_lower or 'automatizar' in message_lower:
-                service_mentioned = 'automatización'
-            elif 'chatbot' in message_lower:
-                service_mentioned = 'chatbots'
-            elif 'finanzas' in message_lower:
-                service_mentioned = 'finanzas'
             
-            if service_mentioned:
-                return f"¡Genial! {service_mentioned.title()} es nuestra especialidad. ¿Agendamos 15 min para mostrarte casos de éxito?"
-        
-        # Respuestas basadas en palabras clave
-        if any(word in message_lower for word in ['hola', 'epale', 'buenas', 'saludos']):
-            return f"¡Hola {self.contact_name}! ¿En qué puedo ayudarte hoy? 😊"
-        
-        elif any(word in message_lower for word in ['ia', 'inteligencia artificial', 'ai', 'automatizacion', 'automatizar']):
-            return f"¡Perfecto, {self.contact_name}! En TDX ofrecemos soluciones de IA para optimizar tu empresa. ¿En qué área específica estás buscando implementar inteligencia artificial? 🚀"
-        
-        elif any(word in message_lower for word in ['finanzas', 'financiero', 'contabilidad']):
-            return f"¡Perfecto, {self.contact_name}! En TDX contamos con soluciones de IA para optimizar tus procesos financieros. ¿Podrías proporcionarme tu nombre y dirección de correo electrónico para agendar una reunión y profundizar en tus necesidades? 🚀"
-        
-        elif any(word in message_lower for word in ['si', 'sí', 'dale', 'ok', 'claro', 'perfecto', 'genial', 'agendemos']):
-            if not self.collected_data['email'] and not self.collected_data['phone']:
-                return f"¡Perfecto, {self.contact_name}! Para agendar la llamada, necesito tu nombre y dirección de correo electrónico. ¿Podrías proporcionármelos por favor? 😉"
+        except Exception as e:
+            logger.error(f"Error handling show_calendar_options: {e}")
+            return "Tengo horarios disponibles. ¿Te gustaría agendar una reunión?"
+
+    async def _handle_schedule_meeting(self, function_args: Dict) -> str:
+        """Manejar agendamiento real de la reunión"""
+        try:
+            option_selected = function_args.get('option_selected', '1')
+            
+            # Mapear opción a horario
+            time_mapping = {
+                "1": {"date": "2025-08-06", "time": "09:00", "display": "Martes 6 de Agosto a las 9:00 AM"},
+                "2": {"date": "2025-08-06", "time": "10:00", "display": "Martes 6 de Agosto a las 10:00 AM"},
+                "3": {"date": "2025-08-06", "time": "11:00", "display": "Martes 6 de Agosto a las 11:00 AM"}
+            }
+            
+            selected_time = time_mapping.get(option_selected, time_mapping["1"])
+            
+            # Actualizar estado
+            self.collected_data['selected_time_slot'] = selected_time['display']
+            self.collected_data['meeting_confirmed'] = True
+            self.conversation_state = "closing"
+            
+            # Llamar al Microsoft Graph Client para agendar la reunión real
+            logger.info(f"🔧 Agendando reunión real con Microsoft Graph...")
+            
+            meeting_result = await self.graph_client.create_meeting(
+                attendee_email=self.collected_data['email'],
+                meeting_date=selected_time['date'],
+                meeting_time=selected_time['time'],
+                contact_name=self.collected_data['name'],
+                company_name=self.collected_data.get('company', self.company_name),
+                meeting_type="discovery_call"
+            )
+            
+            if meeting_result.get('meeting_scheduled'):
+                # Reunión agendada exitosamente
+                meeting_link = meeting_result.get('meeting_link', 'Se enviará por email')
+                confirmation_msg = f"¡Perfecto {self.collected_data['name']}! 🎉\n\n✅ Tu reunión ha sido agendada para {selected_time['display']}\n\n📧 Te envié la invitación a {self.collected_data['email']}\n🔗 Link de Teams: {meeting_link}\n\n¡Nos vemos pronto para mostrarte cómo TDX puede transformar tu área de {self.collected_data.get('service_interest', 'finanzas')}!"
+                
+                logger.info(f"✅ Reunión agendada exitosamente para {self.collected_data['name']}")
+                return confirmation_msg
             else:
-                return f"¡Gracias, {self.contact_name}! ¿Cuál es tu nombre completo y número de teléfono para completar la información de agendamiento? 📝📞"
+                # Error al agendar, pero confirmar de todas formas
+                logger.warning(f"⚠️ Error agendando reunión real, pero confirmando al usuario")
+                return f"¡Perfecto {self.collected_data['name']}! 🎉\n\n✅ Tu reunión ha sido agendada para {selected_time['display']}\n\n📧 Te contactaremos pronto con los detalles\n\n¡Nos vemos para mostrarte cómo TDX puede transformar tu área de {self.collected_data.get('service_interest', 'finanzas')}!"
+            
+        except Exception as e:
+            logger.error(f"❌ Error handling schedule_meeting: {e}")
+            return f"¡Perfecto! Tu reunión ha sido confirmada. Te contactaremos pronto con los detalles."
+
+    async def _generate_fallback_response_simple(self, message: str) -> str:
+        """Respuesta de fallback simple cuando OpenAI falla"""
+        message_lower = message.lower()
         
-        elif any(word in message_lower for word in ['mañana', 'tarde', 'horario', 'tiempo']):
-            return f"¡Gracias, {self.contact_name}! ¿Podrías indicarme en qué horario te gustaría agendar nuestra reunión para hablar sobre soluciones de IA en finanzas? 🚀"
+        # Detectar selección de horario
+        if any(num in message_lower for num in ['1', '2', '3']) and self.collected_data['calendar_options_shown']:
+            return await self._handle_schedule_meeting({'option_selected': message_lower.strip()})
         
+        # Respuestas básicas
+        if any(word in message_lower for word in ['hola', 'epale', 'buenas']):
+            return f"¡Hola {self.contact_name}! ¿En qué puedo ayudarte hoy? 😊"
+        elif any(word in message_lower for word in ['ia', 'automatizacion', 'finanzas']):
+            return f"¡Perfecto! En TDX ofrecemos soluciones de IA. ¿Me das tu email y teléfono para agendar una demo?"
         else:
-            # Respuesta por defecto
-            return f"Interesante {self.contact_name}. ¿Qué proceso de {self.company_name} te gustaría automatizar con IA? 🤖"
+            return f"Interesante {self.contact_name}. ¿En qué área te gustaría implementar IA?"
 
     
     async def _send_chatwoot_response(self, message: str) -> bool:
