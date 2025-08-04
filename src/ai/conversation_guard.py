@@ -345,9 +345,15 @@ class ConversationGuard:
                     for entry in conversation_log[-5:]
                 )
                 
-                if conversation_advanced:
+                # Solo aplicar fallback si realmente hay datos COMPLETOS (incluyendo teléfono)
+                has_phone = any(
+                    any(keyword in str(entry.get('content', '')) for keyword in ['3', '31', 'telefono', 'teléfono'])
+                    for entry in conversation_log[-5:]
+                )
+                
+                if conversation_advanced and has_phone:
                     return {
-                        'reason': 'Conversación ya avanzó, no reiniciar',
+                        'reason': 'Conversación ya avanzó con datos completos, no reiniciar',
                         'fallback': 'Perfecto. Ya tenemos todo listo. Te contactaremos pronto para coordinar la demo de automatización.'
                     }
             
@@ -375,10 +381,16 @@ class ConversationGuard:
                     for msg in recent_user_messages[-2:]
                 )
                 
-                # Si el usuario está seleccionando opciones, no es un bucle
-                if not user_selecting_option:
+                # Verificar si ya tenemos datos completos (email, teléfono, nombre)
+                has_complete_data = any(
+                    all(keyword in str(entry.get('content', '')) for keyword in ['@', '3'])
+                    for entry in conversation_log[-5:]
+                )
+                
+                # Solo aplicar fallback si el usuario está seleccionando opciones Y tenemos datos completos
+                if not user_selecting_option and has_complete_data:
                     return {
-                        'reason': 'Bucle infinito en confirmaciones de agendamiento',
+                        'reason': 'Bucle infinito en confirmaciones de agendamiento con datos completos',
                         'fallback': None  # Permitir que el flujo normal continúe
                     }
             

@@ -419,12 +419,9 @@ Responde al siguiente mensaje del cliente:"""
                 return "¡Excelente! Ya tengo tu email y teléfono. Te contactaremos muy pronto para coordinar la demo de automatización."
         
         # CASO 3: Usuario proporcionó email pero falta teléfono
-        if has_email and not self.collected_data['phone']:
-            # Pedir teléfono solo si no lo hemos pedido recientemente
-            if not any('teléfono' in msg for msg in recent_bot_messages[-1:]):
-                return "Excelente, Freddy. Para completar el agendamiento, ¿me podrías proporcionar tu número de teléfono?"
-            else:
-                return "Perfecto. Te contactaremos al email que proporcionaste para coordinar la demo."
+        if self.collected_data['email'] and not self.collected_data['phone']:
+            # Siempre pedir teléfono si no lo tenemos, es crítico para el flujo
+            return "Excelente, Freddy. Para completar el agendamiento, ¿me podrías proporcionar tu número de teléfono?"
         
         # CASO 4: Usuario proporcionó teléfono pero falta email
         if has_phone and not self.collected_data['email']:
