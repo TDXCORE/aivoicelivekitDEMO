@@ -637,6 +637,30 @@ async def shutdown_event():
     except Exception as e:
         logger.error(f"Error during cleanup: {e}")
 
+# ============================================================================ 
+# DEBUGGING STORAGE - Para capturar webhooks sin logs
+# ============================================================================
+
+# Almacenamiento temporal de webhooks para debugging
+webhook_debug_storage = []
+
+@app.get('/debug/webhooks')
+async def get_webhook_debug_data():
+    """Endpoint para obtener los últimos webhooks capturados"""
+    return {
+        "total_webhooks": len(webhook_debug_storage),
+        "last_10_webhooks": webhook_debug_storage[-10:] if webhook_debug_storage else [],
+        "timestamp": datetime.now().isoformat()
+    }
+
+@app.post('/debug/clear')
+async def clear_webhook_debug_data():
+    """Limpiar datos de debugging"""
+    global webhook_debug_storage
+    count = len(webhook_debug_storage)
+    webhook_debug_storage = []
+    return {"cleared": count, "timestamp": datetime.now().isoformat()}
+
 # ============================================================================
 # WHATSAPP BOT ENDPOINTS - AGREGADOS SIN MODIFICAR CODIGO EXISTENTE
 # ============================================================================
@@ -661,6 +685,21 @@ async def whatsapp_webhook_endpoint(token: str, request: Request):
     try:
         # Capturar datos del webhook PRIMERO para debugging
         webhook_data = await request.json()
+        
+        # Almacenar en debug storage
+        debug_entry = {
+            "timestamp": datetime.now().isoformat(),
+            "token": token[:10] + "...",
+            "headers": dict(request.headers),
+            "data": webhook_data,
+            "whatsapp_enabled": WHATSAPP_ENABLED
+        }
+        webhook_debug_storage.append(debug_entry)
+        
+        # Mantener solo los últimos 50 webhooks
+        if len(webhook_debug_storage) > 50:
+            webhook_debug_storage.pop(0)
+        
         logger.info("=" * 80)
         logger.info("🔍 REAL WEBHOOK DATA FROM CHATWOOT:")
         logger.info("=" * 80)
@@ -694,6 +733,10 @@ async def whatsapp_webhook_endpoint(token: str, request: Request):
         
         # Procesar con handler completo
         result = await whatsapp_webhook_handler.handle_webhook(mock_request)
+        
+        # Almacenar resultado en debug entry
+        if webhook_debug_storage:
+            webhook_debug_storage[-1]["processing_result"] = result
         
         logger.info(f"🔍 ENDPOINT DEBUG - Handler result: {result}")
         
