@@ -27,29 +27,19 @@ class WhatsAppWebhookHandler:
         start_time = datetime.now()
         
         try:
-            # Simplified webhook handling for restructure testing
+            # Obtener datos del webhook
             webhook_data = await request.json()
             
-            logger.info(f"Received webhook data: {webhook_data}")
+            logger.info(f"🔍 WEBHOOK DEBUG - Received webhook data: {webhook_data}")
             
-            # # 1. Validación de seguridad y deduplicación
-            # webhook_data = await self.security.validate_webhook(request)
-            # 
-            # # 1.1. Manejo de mensajes duplicados
-            # if webhook_data is None:
-            #     return {'status': 'ignored', 'reason': 'duplicate_message'}
-            # 
-            # # 2. Verificar si el mensaje debe ser procesado
-            # processable, reason = self.security.is_processable_message(webhook_data)
-            # if not processable:
-            #     logger.info(f"Message ignored: {reason} - Conversation ID: {webhook_data.get('conversation', {}).get('id')}")
-            #     return {'status': 'ignored', 'reason': reason}
-            # 
-            # # 3. Procesar mensaje con bot
-            # result = await self.process_customer_message(webhook_data, start_time)
-            # return result
+            # Verificar si es un mensaje procesable
+            if not self._is_processable_message(webhook_data):
+                logger.info("Message not processable, ignoring")
+                return {'status': 'ignored', 'reason': 'not_processable'}
             
-            return {'status': 'webhook_received', 'timestamp': start_time.isoformat()}
+            # Procesar mensaje
+            result = await self.process_customer_message(webhook_data, start_time)
+            return result
             
         except HTTPException as e:
             # Errores de validación (401, 403, 429, etc.)
@@ -59,38 +49,92 @@ class WhatsAppWebhookHandler:
             logger.error(f"Unexpected webhook error: {e}")
             return {'status': 'error', 'message': str(e)}
     
+    def _is_processable_message(self, webhook_data: Dict[str, Any]) -> bool:
+        """Verificar si el mensaje debe ser procesado"""
+        try:
+            # Verificar que sea un mensaje entrante de una conversación
+            if webhook_data.get('event') != 'message_created':
+                logger.info(f"Ignoring non-message event: {webhook_data.get('event')}")
+                return False
+            
+            # Verificar que tenga estructura básica de mensaje
+            message = webhook_data.get('message', {})
+            if not message:
+                logger.info("No message data found")
+                return False
+            
+            # Ignorar mensajes salientes (del bot)
+            if message.get('message_type') == 'outgoing':
+                logger.info("Ignoring outgoing message")
+                return False
+            
+            # Verificar que tenga contenido
+            content = message.get('content', '').strip()
+            if not content:
+                logger.info("Message has no content")
+                return False
+            
+            logger.info(f"Message is processable: {content[:50]}...")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error checking if message is processable: {e}")
+            return False
+    
+    def _extract_conversation_data(self, webhook_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Extraer datos de la conversación del webhook"""
+        try:
+            conversation = webhook_data.get('conversation', {})
+            message = webhook_data.get('message', {})
+            contact = conversation.get('meta', {}).get('sender', {})
+            
+            return {
+                'conversation_id': conversation.get('id'),
+                'message_content': message.get('content', '').strip(),
+                'contact': {
+                    'id': contact.get('id'),
+                    'name': contact.get('name', 'Cliente'),
+                    'phone': contact.get('phone_number', ''),
+                    'email': contact.get('email', ''),
+                    'company_name': contact.get('custom_attributes', {}).get('company_name', '')
+                }
+            }
+        except Exception as e:
+            logger.error(f"Error extracting conversation data: {e}")
+            return {}
+    
     async def process_customer_message(self, webhook_data: Dict[str, Any], start_time: datetime) -> Dict[str, Any]:
         """Procesar mensaje del cliente"""
         conversation_id = None
         
         try:
-            # Extraer datos del webhook usando security helper
-            extracted_data = self.security.extract_conversation_data(webhook_data)
+            # Extraer datos del webhook
+            extracted_data = self._extract_conversation_data(webhook_data)
             
-            conversation_id = extracted_data['conversation_id']
-            message_content = extracted_data['message_content']
-            contact = extracted_data['contact']
+            conversation_id = extracted_data.get('conversation_id')
+            message_content = extracted_data.get('message_content')
+            contact = extracted_data.get('contact', {})
             
-            logger.info(f"Processing WhatsApp message: conversation {conversation_id} from {contact['name']}")
+            if not conversation_id or not message_content:
+                logger.error("Missing conversation_id or message_content")
+                return {'status': 'error', 'message': 'Invalid webhook data'}
+            
+            logger.info(f"Processing WhatsApp message: conversation {conversation_id} from {contact.get('name', 'Unknown')}")
+            logger.info(f"Message content: {message_content}")
             
             # Obtener o crear instancia del bot para esta conversación
             bot = await self.get_or_create_bot(conversation_id, contact)
-            
-            # Métricas: log mensaje del usuario
-            await self.metrics.log_user_message(conversation_id, message_content)
             
             # Procesar mensaje y medir tiempo de respuesta
             response_start = datetime.now()
             response = await bot.process_message(message_content)
             response_time = (datetime.now() - response_start).total_seconds()
             
-            # Métricas: log respuesta del bot
+            # Calcular tiempo total de procesamiento
+            total_time = (datetime.now() - start_time).total_seconds()
+            
             if response:
-                await self.metrics.log_bot_response(conversation_id, response, response_time)
-                
-                # Calcular tiempo total de procesamiento
-                total_time = (datetime.now() - start_time).total_seconds()
-                
+                logger.info(f"✅ Bot response sent successfully: {response[:50]}...")
                 return {
                     'status': 'processed',
                     'conversation_id': conversation_id,
@@ -100,7 +144,7 @@ class WhatsAppWebhookHandler:
                     'response_time': round(response_time, 3)
                 }
             else:
-                await self.metrics.log_error(conversation_id, 'response_generation_failed', 'Bot failed to generate response')
+                logger.error("❌ Bot failed to generate response")
                 return {
                     'status': 'processed',
                     'conversation_id': conversation_id,
@@ -110,8 +154,8 @@ class WhatsAppWebhookHandler:
                 
         except Exception as e:
             logger.error(f"Error processing message: {e}")
-            if conversation_id:
-                await self.metrics.log_error(conversation_id, 'processing_error', str(e))
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
             return {'status': 'error', 'message': str(e)}
     
     async def get_or_create_bot(self, conversation_id: int, contact: Dict[str, Any]) -> TDXWhatsAppBot:
@@ -140,8 +184,7 @@ class WhatsAppWebhookHandler:
             
             self.active_bots[conversation_id] = bot
             
-            # Log métricas de nueva conversación
-            await self.metrics.log_conversation_started(conversation_id, prospect_info)
+            # Log nueva conversación (métricas removidas por simplicidad)
             
             logger.info(f"Created new WhatsApp bot for conversation {conversation_id} - Contact: {contact_name}")
         
@@ -165,8 +208,7 @@ class WhatsAppWebhookHandler:
                         
                         if time_diff > inactive_threshold:
                             bots_to_remove.append(conversation_id)
-                            # Log fin de conversación por inactividad
-                            await self.metrics.log_conversation_ended(conversation_id, "inactive_cleanup")
+                            # Log fin de conversación por inactividad (métricas removidas)
                     except:
                         # Si hay error parseando timestamp, considerar para limpieza
                         bots_to_remove.append(conversation_id)
@@ -204,8 +246,7 @@ class WhatsAppWebhookHandler:
     async def force_cleanup_conversation(self, conversation_id: int, reason: str = "manual_cleanup") -> bool:
         """Forzar limpieza de una conversación específica"""
         if conversation_id in self.active_bots:
-            # Log fin de conversación
-            await self.metrics.log_conversation_ended(conversation_id, reason)
+            # Log fin de conversación (métricas removidas)
             
             # Remover bot
             del self.active_bots[conversation_id]

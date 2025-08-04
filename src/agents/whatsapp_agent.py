@@ -22,6 +22,9 @@ class TDXWhatsAppAgentV2:
         self.chatwoot_account_id = os.getenv('VITE_CHATWOOT_ACCOUNT_ID')
         self.chatwoot_api_token = os.getenv('VITE_CHATWOOT_API_TOKEN')
         
+        logger.info(f"🔍 AGENT DEBUG - Account ID: {self.chatwoot_account_id}")
+        logger.info(f"🔍 AGENT DEBUG - API Token configured: {bool(self.chatwoot_api_token)}")
+        
         logger.info(f"WhatsApp agent initialized for {contact_name} - Conversation {conversation_id}")
     
     async def process_message(self, message_content: str) -> Optional[str]:
@@ -90,7 +93,9 @@ class TDXWhatsAppAgentV2:
         """Enviar respuesta a través de la API de Chatwoot"""
         try:
             if not all([self.chatwoot_account_id, self.chatwoot_api_token]):
-                logger.error("Chatwoot credentials not configured")
+                logger.error("❌ Chatwoot credentials not configured")
+                logger.error(f"Account ID: {self.chatwoot_account_id}")
+                logger.error(f"API Token present: {bool(self.chatwoot_api_token)}")
                 return False
             
             headers = {
@@ -106,15 +111,23 @@ class TDXWhatsAppAgentV2:
             
             url = f"https://app.chatwoot.com/api/v1/accounts/{self.chatwoot_account_id}/conversations/{self.conversation_id}/messages"
             
+            logger.info(f"🔍 SEND DEBUG - URL: {url}")
+            logger.info(f"🔍 SEND DEBUG - Payload: {payload}")
+            
             response = requests.post(url, headers=headers, json=payload, timeout=10)
             
+            logger.info(f"🔍 SEND DEBUG - Response status: {response.status_code}")
+            logger.info(f"🔍 SEND DEBUG - Response text: {response.text}")
+            
             if response.status_code in [200, 201]:
-                logger.info(f"Message sent successfully to conversation {self.conversation_id}")
+                logger.info(f"✅ Message sent successfully to conversation {self.conversation_id}")
                 return True
             else:
-                logger.error(f"Chatwoot API error: {response.status_code} - {response.text}")
+                logger.error(f"❌ Chatwoot API error: {response.status_code} - {response.text}")
                 return False
                 
         except Exception as e:
-            logger.error(f"Error sending Chatwoot response: {e}")
+            logger.error(f"❌ Error sending Chatwoot response: {e}")
+            import traceback
+            logger.error(f"❌ Traceback: {traceback.format_exc()}")
             return False
