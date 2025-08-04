@@ -23,13 +23,8 @@ def start_voice_agent():
     logger.info("🤖 Starting Voice Agent...")
     
     try:
-        # Ejecutar agent.py en subproceso
-        result = subprocess.run([
-            sys.executable, "agent.py", "start"
-        ], capture_output=False, text=True)
-        
-        if result.returncode != 0:
-            logger.error(f"Voice agent exited with code: {result.returncode}")
+        # Note: Voice agent functionality will be implemented separately
+        logger.info("Voice agent functionality placeholder - implement as needed")
     except Exception as e:
         logger.error(f"Error starting voice agent: {e}")
 

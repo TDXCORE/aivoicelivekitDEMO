@@ -1,0 +1,22 @@
+livekit>=1.0
+livekit-agents[openai]~=1.0
+python-dotenv~=1.0
+msgraph-sdk>=1.5.0
+azure-identity>=1.19.0
+requests>=2.31.0
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+
+# WhatsApp Bot dependencies - AGREGADAS
+aiohttp>=3.9.0
+openai>=1.3.0
+
+# Telnyx Integration dependencies - AGREGADAS
+httpx>=0.25.0
+
+# Business Hours Validation - AGREGADAS
+requests>=2.31.0  # Para API de festivos colombianos (ya incluido arriba)
+
+# TDX Core 2025 - Nuevas dependencias
+scikit-learn>=1.3.0  # Para intent classification
+numpy>=1.24.0  # Para ML operations
