@@ -379,7 +379,7 @@ class ConversationGuard:
                 if not user_selecting_option:
                     return {
                         'reason': 'Bucle infinito en confirmaciones de agendamiento',
-                        'fallback': 'Te contacto directamente. ¿Cuál es tu mejor número de teléfono?'
+                        'fallback': None  # Permitir que el flujo normal continúe
                     }
             
             # CASO 4: El usuario confirma pero el bot sigue preguntando lo mismo
