@@ -61,7 +61,10 @@ async def root():
     return {
         "status": "active",
         "service": "Chatwoot Webhook Receiver",
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now().isoformat(),
+        "version": "v2.0-debug-enabled",
+        "whatsapp_enabled": WHATSAPP_ENABLED,
+        "debug_active": True
     }
 
 @app.get("/health")
