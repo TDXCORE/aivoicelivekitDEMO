@@ -60,6 +60,12 @@ class ConversationGuard:
                        conversation_log: List[Dict[str, Any]]) -> str:
         """Verificar loops y aplicar fallback si es necesario"""
         try:
+            # Verificar loops específicos de agendamiento PRIMERO
+            scheduling_loop = self._detect_scheduling_loop(response, conversation_log)
+            if scheduling_loop:
+                logger.warning(f"Loop de agendamiento detectado en {conversation_id}: {scheduling_loop['reason']}")
+                return scheduling_loop['fallback']
+            
             # Generar hash de la respuesta normalizada
             response_hash = self._generate_response_hash(response)
             
@@ -279,6 +285,79 @@ class ConversationGuard:
         
         logger.info(f"Limpiadas {len(inactive_conversations)} conversaciones inactivas")
         return len(inactive_conversations)
+    
+    def _detect_scheduling_loop(self, response: str, conversation_log: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """Detectar loops específicos de agendamiento"""
+        try:
+            # Obtener últimas respuestas del bot
+            recent_bot_responses = [
+                entry.get('content', '').lower() for entry in conversation_log[-6:]
+                if entry.get('type') == 'assistant_message'
+            ]
+            
+            # Obtener últimos mensajes del usuario
+            recent_user_messages = [
+                entry.get('content', '').lower() for entry in conversation_log[-6:]
+                if entry.get('type') == 'user_message'
+            ]
+            
+            current_response = response.lower()
+            
+            # CASO 1: Repetir "¿Qué día y hora te conviene?" después de que el usuario ya dio información
+            if any('día y hora' in resp or 'cuándo' in resp for resp in recent_bot_responses[-2:]):
+                # Verificar si el usuario ya dio información de tiempo
+                time_info_given = any(
+                    any(keyword in msg for keyword in ['mañana', 'tarde', 'pm', 'am', '3pm', '10', '11', '12', '1', '2', '3', '4', '5'])
+                    for msg in recent_user_messages[-2:]
+                )
+                
+                if time_info_given and ('día y hora' in current_response or 'cuándo' in current_response):
+                    return {
+                        'reason': 'Usuario ya proporcionó información de horario',
+                        'fallback': '¡Perfecto! Te envío la invitación para mañana a las 3:00 PM. Solo necesito confirmar tu email.'
+                    }
+            
+            # CASO 2: Repetir pregunta general sobre servicios después de que el usuario especificó
+            service_keywords = ['automatización', 'automatizar', 'chatbot', 'finanzas', 'conciliación']
+            service_mentioned = any(
+                any(keyword in msg for keyword in service_keywords)
+                for msg in recent_user_messages[-3:]
+            )
+            
+            if service_mentioned:
+                general_questions = ['qué puedo ayudarte', 'en qué podemos ayudarte', 'qué servicio']
+                if any(question in current_response for question in general_questions):
+                    return {
+                        'reason': 'Usuario ya especificó servicio de interés',
+                        'fallback': 'Perfecto, automatización financiera es exactamente nuestra especialidad. ¿Agendamos una demo?'
+                    }
+            
+            # CASO 3: Bucle infinito en confirmación de agendamiento
+            confirmation_responses = [resp for resp in recent_bot_responses if 'agend' in resp or 'reunión' in resp or 'llamada' in resp]
+            if len(confirmation_responses) >= 2 and ('agend' in current_response or 'reunión' in current_response):
+                return {
+                    'reason': 'Bucle infinito en confirmaciones de agendamiento',
+                    'fallback': 'Te contacto directamente. ¿Cuál es tu mejor número de teléfono?'
+                }
+            
+            # CASO 4: El usuario confirma pero el bot sigue preguntando lo mismo
+            user_confirmations = [msg for msg in recent_user_messages[-2:] if any(
+                conf in msg for conf in ['si', 'sí', 'yes', 'dale', 'ok', 'claro', 'perfecto', 'genial', 'agendemos']
+            )]
+            
+            if user_confirmations and len(recent_bot_responses) >= 2:
+                # Si el usuario confirmó y el bot repite la misma pregunta
+                if recent_bot_responses[-1] == recent_bot_responses[-2]:
+                    return {
+                        'reason': 'Usuario confirmó pero bot repite pregunta',
+                        'fallback': 'Excelente. Te envío los detalles por WhatsApp. ¿Cuál es tu email corporativo?'
+                    }
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error detecting scheduling loop: {e}")
+            return None
 
 # Instancia global
 conversation_guard = ConversationGuard()

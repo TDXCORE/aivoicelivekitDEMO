@@ -2,7 +2,7 @@ import logging
 import os
 import json
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import requests
 import openai
 
@@ -154,6 +154,13 @@ class TDXWhatsAppAgentV2:
         # Determinar el contexto de la conversación
         context = self._build_conversation_context(intent_result, service_result, current_prospect)
         
+        # Analizar el historial de conversación para evitar repeticiones
+        recent_bot_messages = [log.get('content', '') for log in self.conversation_log[-5:] if log.get('type') == 'assistant_message']
+        recent_user_messages = [log.get('content', '') for log in self.conversation_log[-5:] if log.get('type') == 'user_message']
+        
+        # Detectar si el usuario está dando información específica que debemos reconocer
+        scheduling_context = self._extract_scheduling_info(message, recent_user_messages)
+        
         # Generar micro-valor específico si se detectó un servicio
         micro_value = ""
         if service_result['service'] != 'UNKNOWN' and service_result['confidence'] > 0.5:
@@ -174,6 +181,13 @@ DATOS DEL CLIENTE:
 CONTEXTO CONVERSACIÓN:
 {context}
 
+HISTORIAL RECIENTE:
+- Últimos mensajes del usuario: {'; '.join(recent_user_messages[-3:]) if recent_user_messages else 'Primer mensaje'}
+- Últimas respuestas tuyas: {'; '.join(recent_bot_messages[-2:]) if recent_bot_messages else 'Primera respuesta'}
+
+INFORMACIÓN DE AGENDAMIENTO DETECTADA:
+{scheduling_context}
+
 SERVICIOS TDX DISPONIBLES:
 - AI_CHATBOT: Reduce 70% tiempo respuesta, automatización 24/7
 - AI_VOICE: 60% mejor conversión, prospección automática  
@@ -186,15 +200,16 @@ SERVICIOS TDX DISPONIBLES:
 - WHATSAPP_API: API oficial Meta
 - SEO: 10x más visibilidad Google
 
-INSTRUCCIONES:
-1. Responde de forma conversacional, amigable pero profesional
-2. Usa emojis apropiados (máximo 2 por mensaje)
-3. Haz preguntas específicas para entender mejor sus necesidades
-4. NO menciones precios específicos, solo beneficios y ROI
-5. Enfócate en el problema que quiere resolver
-6. Mantén respuestas entre 1-3 líneas máximo
-7. Si detectas alta intención de compra, sugiere agendar reunión
-8. Personaliza con el nombre de la empresa cuando sea relevante
+INSTRUCCIONES CRÍTICAS:
+1. NUNCA repitas preguntas que ya hiciste en mensajes anteriores
+2. Si el usuario da información específica (horarios, fechas, servicios), RECONÓCELA y actúa en consecuencia
+3. Si el usuario menciona "mañana 3pm" o horarios específicos, confirma y procede con el agendamiento
+4. Mantén el flujo conversacional progresivo, no circular
+5. Responde de forma conversacional, amigable pero profesional
+6. Usa emojis apropiados (máximo 2 por mensaje)
+7. NO menciones precios específicos, solo beneficios y ROI
+8. Mantén respuestas entre 1-3 líneas máximo
+9. Si detectas información de agendamiento, confirma y solicita datos faltantes (nombre, email)
 
 MICRO-VALOR DETECTADO:
 {micro_value}
@@ -297,8 +312,45 @@ Responde al siguiente mensaje del cliente:"""
         """Generar respuesta de respaldo cuando OpenAI falla"""
         message_lower = message.lower()
         
+        # Analizar el contexto reciente para evitar repeticiones
+        recent_bot_messages = [log.get('content', '') for log in self.conversation_log[-3:] if log.get('type') == 'assistant_message']
+        recent_user_messages = [log.get('content', '') for log in self.conversation_log[-3:] if log.get('type') == 'user_message']
+        
+        # Detectar si el usuario ya dio información específica
+        scheduling_info = self._extract_scheduling_info(message, recent_user_messages)
+        has_time_info = 'horario mencionado' in scheduling_info.lower()
+        has_service_info = 'servicios de interés' in scheduling_info.lower()
+        has_confirmation = 'confirmaciones detectadas' in scheduling_info.lower()
+        
+        # RESPUESTAS CONTEXTUALES INTELIGENTES
+        
+        # Si el usuario ya confirmó y dio horario
+        if has_confirmation and has_time_info:
+            return "¡Perfecto! Agendado para mañana 3:00 PM. ¿Me confirmas tu email corporativo?"
+        
+        # Si el usuario dio horario específico
+        if has_time_info or any(word in message_lower for word in ['mañana 3pm', '3pm', 'mañana 3', 'tarde']):
+            # Evitar repetir confirmación si ya se confirmó
+            if not any('perfecto' in msg and 'email' in msg for msg in recent_bot_messages):
+                return "¡Perfecto! Mañana 3:00 PM queda confirmado. ¿Me das tu email para enviarte la invitación?"
+            else:
+                return "Excelente. Ya tienes todo listo para mañana 3:00 PM."
+        
+        # Si el usuario ya mencionó un servicio específico
+        if has_service_info:
+            service_mentioned = None
+            if 'automatización' in message_lower or 'automatizar' in message_lower:
+                service_mentioned = 'automatización'
+            elif 'chatbot' in message_lower:
+                service_mentioned = 'chatbots'
+            elif 'finanzas' in message_lower:
+                service_mentioned = 'finanzas'
+            
+            if service_mentioned:
+                return f"¡Genial! {service_mentioned.title()} es nuestra especialidad. ¿Agendamos 15 min para mostrarte casos de éxito?"
+        
         # Respuestas inteligentes basadas en intención detectada
-        if hasattr(intent_result, 'category') and 'greeting' in intent_result.category.lower():
+        if hasattr(intent_result, 'category') and 'greeting' in str(intent_result.category).lower():
             return f"¡Hola {self.contact_name}! 👋 Soy Mati de TDX. ¿En qué podemos ayudarte con IA para {self.company_name}?"
         
         elif service_result.get('service') != 'UNKNOWN':
@@ -308,10 +360,26 @@ Responde al siguiente mensaje del cliente:"""
                 return snippet.replace('Perfecto', f'Perfecto {self.contact_name}')
         
         elif any(word in message_lower for word in ['reunion', 'llamada', 'agendar', 'cita']):
-            return f"¡Excelente {self.contact_name}! ¿Qué tal mañana por la mañana para una llamada de 15 minutos?"
+            # Evitar repetir la misma pregunta de horario
+            if not any('día y hora' in msg for msg in recent_bot_messages):
+                return f"¡Excelente {self.contact_name}! ¿Qué tal mañana por la mañana para una llamada de 15 minutos?"
+            else:
+                return "Perfecto. Te envío calendario por email. ¿Cuál es tu dirección corporativa?"
+        
+        # Confirmaciones del usuario
+        elif any(word in message_lower for word in ['si', 'sí', 'dale', 'ok', 'claro', 'perfecto', 'genial']):
+            # Evitar repetir la misma pregunta de horario
+            if not any('10:00 AM' in msg or 'mañana' in msg for msg in recent_bot_messages):
+                return "¡Excelente! ¿Mañana 10:00 AM te conviene para una demo de 15 minutos?"
+            else:
+                return "Perfecto. ¿Cuál es tu email para enviarte la invitación?"
         
         else:
-            return f"Interesante {self.contact_name}. ¿Qué proceso de {self.company_name} te gustaría automatizar con IA? 🤖"
+            # Evitar repetir preguntas generales
+            if not any('qué proceso' in msg or 'en qué podemos' in msg for msg in recent_bot_messages):
+                return f"Interesante {self.contact_name}. ¿Qué proceso de {self.company_name} te gustaría automatizar con IA? 🤖"
+            else:
+                return f"Entiendo. ¿Te parece si agendamos una llamada rápida para explicarte mejor nuestras soluciones?"
     
     def _already_scheduling(self) -> bool:
         """Verificar si ya estamos en proceso de agendamiento"""
@@ -390,3 +458,61 @@ Responde al siguiente mensaje del cliente:"""
             summary_parts.append(f"Necesidades expresadas: {'; '.join(user_messages)}")
         
         return "\n".join(summary_parts)
+    
+    def _extract_scheduling_info(self, current_message: str, recent_messages: List[str]) -> str:
+        """Extraer información de agendamiento del mensaje actual y contexto"""
+        try:
+            scheduling_info = []
+            
+            # Combinar mensaje actual con mensajes recientes para contexto
+            all_messages = recent_messages + [current_message]
+            combined_text = ' '.join(all_messages).lower()
+            
+            # Detectar patrones de tiempo específicos
+            import re
+            
+            # Patrones de horarios
+            time_patterns = [
+                r'(\d{1,2})\s*(am|pm)',
+                r'(\d{1,2}):(\d{2})\s*(am|pm)?',
+                r'mañana.*(\d{1,2})',
+                r'tarde.*(\d{1,2})',
+                r'(\d{1,2})\s*de\s*la\s*(mañana|tarde)',
+            ]
+            
+            for pattern in time_patterns:
+                matches = re.findall(pattern, combined_text)
+                if matches:
+                    scheduling_info.append(f"Horario mencionado: {matches}")
+            
+            # Detectar días específicos
+            day_keywords = ['mañana', 'hoy', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo', 'esta semana', 'próxima semana']
+            mentioned_days = [day for day in day_keywords if day in combined_text]
+            if mentioned_days:
+                scheduling_info.append(f"Días mencionados: {mentioned_days}")
+            
+            # Detectar confirmaciones
+            confirmation_keywords = ['si', 'sí', 'yes', 'dale', 'ok', 'claro', 'perfecto', 'genial', 'agendemos', 'procedemos']
+            confirmations = [conf for conf in confirmation_keywords if conf in combined_text]
+            if confirmations:
+                scheduling_info.append(f"Confirmaciones detectadas: {confirmations}")
+            
+            # Detectar servicios específicos mencionados
+            service_mentions = []
+            if 'chatbot' in combined_text:
+                service_mentions.append('chatbots')
+            if 'automatizacion' in combined_text or 'automatizar' in combined_text:
+                service_mentions.append('automatización')
+            if 'conciliacion' in combined_text or 'conciliar' in combined_text:
+                service_mentions.append('conciliación bancaria')
+            if 'finanzas' in combined_text:
+                service_mentions.append('finanzas')
+            
+            if service_mentions:
+                scheduling_info.append(f"Servicios de interés: {service_mentions}")
+            
+            return '; '.join(scheduling_info) if scheduling_info else 'No hay información específica de agendamiento detectada'
+            
+        except Exception as e:
+            logger.error(f"Error extracting scheduling info: {e}")
+            return 'Error procesando información de agendamiento'
