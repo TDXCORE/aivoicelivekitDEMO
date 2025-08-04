@@ -360,7 +360,7 @@ class ChatwootWhatsAppClient:
                                 
                                 # Buscar conversación de WhatsApp pendiente
                                 for conv in conversations:
-                                    if conv.get('inbox_id') == int(os.getenv('CHATWOOT_WHATSAPP_INBOX_ID', '0')):
+                                    if conv.get('inbox_id') == int(os.getenv('VITE_CHATWOOT_INBOX_ID', '0')):
                                         logger.info(f"Found existing WhatsApp conversation: {conv['id']}")
                                         return {
                                             'conversation_id': conv['id'],
@@ -376,7 +376,7 @@ class ChatwootWhatsAppClient:
                                     conversations = conversations_data.get('data', {}).get('payload', [])
                                     
                                     for conv in conversations:
-                                        if conv.get('inbox_id') == int(os.getenv('CHATWOOT_WHATSAPP_INBOX_ID', '0')):
+                                        if conv.get('inbox_id') == int(os.getenv('VITE_CHATWOOT_INBOX_ID', '0')):
                                             logger.info(f"Found existing WhatsApp conversation: {conv['id']}")
                                             return {
                                                 'conversation_id': conv['id'],
@@ -400,7 +400,7 @@ class ChatwootWhatsAppClient:
                 contact_payload = {
                     'name': contact_name or 'Lead WhatsApp',
                     'phone_number': phone_number,
-                    'inbox_id': int(os.getenv('CHATWOOT_WHATSAPP_INBOX_ID', '0'))
+                    'inbox_id': int(os.getenv('VITE_CHATWOOT_INBOX_ID', '0'))
                 }
                 
                 try:
@@ -434,7 +434,7 @@ class ChatwootWhatsAppClient:
             create_conversation_url = f"{self.base_url}/accounts/{self.account_id}/conversations"
             conversation_payload = {
                 'source_id': phone_number.replace('+', '').replace('-', '').replace(' ', ''),
-                'inbox_id': int(os.getenv('CHATWOOT_WHATSAPP_INBOX_ID', '0')),
+                'inbox_id': int(os.getenv('VITE_CHATWOOT_INBOX_ID', '0')),
                 'contact_id': contact_id,
                 'status': 'pending'
             }
@@ -492,7 +492,7 @@ class ChatwootWhatsAppClient:
             # Verificar configuración
             logger.info(f"🔍 CLIENT DEBUG - Account ID: {self.account_id}")
             logger.info(f"🔍 CLIENT DEBUG - API Token configured: {bool(self.api_token)}")
-            logger.info(f"🔍 CLIENT DEBUG - WhatsApp Inbox ID: {os.getenv('CHATWOOT_WHATSAPP_INBOX_ID')}")
+            logger.info(f"🔍 CLIENT DEBUG - WhatsApp Inbox ID: {os.getenv('VITE_CHATWOOT_INBOX_ID')}")
             
             # 1. Encontrar o crear conversación
             conversation_info = await self.find_or_create_whatsapp_conversation(phone_number, contact_name)

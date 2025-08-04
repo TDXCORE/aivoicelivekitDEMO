@@ -83,7 +83,7 @@ async def health_check():
         "environment_config": {
             "chatwoot_account_id": os.getenv('VITE_CHATWOOT_ACCOUNT_ID', 'NOT_SET'),
             "chatwoot_api_token": bool(os.getenv('VITE_CHATWOOT_API_TOKEN')),
-            "whatsapp_inbox_id": os.getenv('CHATWOOT_WHATSAPP_INBOX_ID', 'NOT_SET'),
+            "whatsapp_inbox_id": os.getenv('VITE_CHATWOOT_INBOX_ID', 'NOT_SET'),
             "webhook_inbox_id": os.getenv('CHATWOOT_WEBHOOK_INBOX_ID', 'NOT_SET'),
             "whatsapp_bot_enabled": os.getenv('WHATSAPP_BOT_ENABLED', 'NOT_SET'),
             "bot_agent_id": os.getenv('CHATWOOT_BOT_AGENT_ID', 'NOT_SET'),
@@ -92,7 +92,7 @@ async def health_check():
         "fallback_config": {
             "chatwoot_account_id": bool(os.getenv('VITE_CHATWOOT_ACCOUNT_ID')),
             "chatwoot_api_token": bool(os.getenv('VITE_CHATWOOT_API_TOKEN')),
-            "whatsapp_inbox_id": bool(os.getenv('CHATWOOT_WHATSAPP_INBOX_ID')),
+            "whatsapp_inbox_id": bool(os.getenv('VITE_CHATWOOT_INBOX_ID')),
             "telnyx_outbound_number": bool(os.getenv('TELNYX_OUTBOUND_NUMBER'))
         }
     }
@@ -530,7 +530,7 @@ async def create_chatwoot_whatsapp_conversation(phone: str, contact_data: Dict[s
         # Usar las credenciales existentes de Chatwoot
         account_id = os.getenv('VITE_CHATWOOT_ACCOUNT_ID')
         api_token = os.getenv('VITE_CHATWOOT_API_TOKEN')
-        whatsapp_inbox_id = os.getenv('CHATWOOT_WHATSAPP_INBOX_ID')
+        whatsapp_inbox_id = os.getenv('VITE_CHATWOOT_INBOX_ID')
         
         if not all([account_id, api_token, whatsapp_inbox_id]):
             logger.error("Missing Chatwoot configuration for WhatsApp fallback")

@@ -33,7 +33,7 @@ class TDXWhatsAppAgentV2:
         # Configuración de APIs
         self.chatwoot_account_id = os.getenv('VITE_CHATWOOT_ACCOUNT_ID')
         self.chatwoot_api_token = os.getenv('VITE_CHATWOOT_API_TOKEN')
-        openai.api_key = os.getenv('OPENAI_API_KEY')
+        self.openai_api_key = os.getenv('OPENAI_API_KEY')
         
         # Inicializar componentes de IA
         self.intent_classifier = IntentClassifier()
@@ -102,8 +102,11 @@ class TDXWhatsAppAgentV2:
             # 6. Evaluación BANT después de cada mensaje
             current_prospect = self.prospect_info.copy()
             current_prospect.update(slot_updates)
+            # Agregar servicio detectado al contexto del prospect
+            if hasattr(intent_result, 'detected_service') and intent_result.detected_service:
+                current_prospect['detected_service'] = intent_result.detected_service
             bant_score = self.bant_scorer.calculate_bant_score(
-                current_prospect, message_content, intent_result.detected_service
+                current_prospect, message_content
             )
             logger.info(f"📊 BANT Score: {bant_score.total_score}/100")
             
@@ -200,7 +203,10 @@ Responde al siguiente mensaje del cliente:"""
         
         try:
             # Llamar a OpenAI para generar respuesta inteligente
-            response = openai.ChatCompletion.create(
+            from openai import OpenAI
+            client = OpenAI(api_key=self.openai_api_key)
+            
+            response = client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[
                     {"role": "system", "content": system_prompt},
