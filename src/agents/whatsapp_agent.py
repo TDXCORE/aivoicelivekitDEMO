@@ -13,6 +13,7 @@ from src.ai.service_mapper import ServiceMapper
 from src.ai.micro_value_injector import MicroValueInjector
 from src.ai.minimal_slot_manager import MinimalSlotManager
 from src.ai.conversation_guard import ConversationGuard
+from src.ai.calendar_manager import CalendarManager
 from src.integrations.microsoft.microsoft_graph_client import MicrosoftGraphClient
 
 logger = logging.getLogger("whatsapp-agent")
@@ -38,7 +39,11 @@ class TDXWhatsAppAgentV2:
             'company': company_name,
             'service_interest': None,
             'demo_confirmed': False,
-            'contact_info_complete': False
+            'contact_info_complete': False,
+            'all_data_complete': False,
+            'calendar_options_shown': False,
+            'selected_time_slot': None,
+            'meeting_confirmed': False
         }
         
         # Configuración de APIs
@@ -53,7 +58,11 @@ class TDXWhatsAppAgentV2:
         self.value_injector = MicroValueInjector()
         self.slot_manager = MinimalSlotManager()
         self.conversation_guard = ConversationGuard()
+        self.calendar_manager = CalendarManager()
         self.graph_client = MicrosoftGraphClient()
+        
+        # Cache para opciones de calendario mostradas
+        self.current_calendar_options = []
         
         # Load service cases
         try:
@@ -344,9 +353,46 @@ Responde al siguiente mensaje del cliente:"""
         
         # RESPUESTAS CONTEXTUALES INTELIGENTES BASADAS EN EL ESTADO DE LA CONVERSACIÓN
         
-        # CASO 1: Si ya tenemos toda la información de contacto
-        if self.collected_data['contact_info_complete']:
-            return "¡Perfecto! Ya tengo todos tus datos. Te contactaremos pronto para agendar la demo de automatización. ¡Gracias por tu interés en TDX!"
+        # CASO 1: Usuario seleccionó horario - confirmar reunión
+        if self.collected_data['selected_time_slot']:
+            confirmation_msg = self.calendar_manager.format_confirmation_message(
+                self.collected_data['selected_time_slot'], 
+                self.collected_data
+            )
+            # Reservar el slot
+            self.calendar_manager.reserve_slot(
+                self.collected_data['selected_time_slot'].datetime, 
+                self.collected_data
+            )
+            self.collected_data['meeting_confirmed'] = True
+            return confirmation_msg
+        
+        # CASO 2: Tenemos todos los datos - mostrar opciones de calendario
+        if self.collected_data['all_data_complete'] and not self.collected_data['calendar_options_shown']:
+            slots = self.calendar_manager.get_next_available_slots(3)
+            self.current_calendar_options = slots
+            self.collected_data['calendar_options_shown'] = True
+            
+            options_msg = self.calendar_manager.format_options_message(
+                slots, 
+                self.collected_data['name'], 
+                self.collected_data['service_interest']
+            )
+            return options_msg
+        
+        # CASO 3: Usuario está respondiendo a las opciones de calendario
+        if self.collected_data['calendar_options_shown'] and self.current_calendar_options:
+            # Intentar parsear la selección
+            selected_slot = self.calendar_manager.parse_time_selection(message, self.current_calendar_options)
+            if selected_slot:
+                self.collected_data['selected_time_slot'] = selected_slot
+                confirmation_msg = self.calendar_manager.format_confirmation_message(selected_slot, self.collected_data)
+                self.calendar_manager.reserve_slot(selected_slot.datetime, self.collected_data)
+                self.collected_data['meeting_confirmed'] = True
+                return confirmation_msg
+            else:
+                # No entendió la selección, clarificar
+                return "Por favor indica qué opción prefieres respondiendo con 1, 2 o 3 😊"
         
         # CASO 2: Usuario proporcionó teléfono (después de email)
         if has_phone and self.collected_data['email']:
@@ -364,13 +410,28 @@ Responde al siguiente mensaje del cliente:"""
         if has_phone and not self.collected_data['email']:
             return "Perfecto, ya tengo tu teléfono. ¿Me puedes proporcionar tu email para enviarte la información de la demo?"
         
-        # CASO 3: Usuario ya confirmó interés y mencionó servicio
-        if has_confirmation and has_service_info:
-            # Si no tenemos datos personales, pedirlos
-            if not has_personal_data and not any('nombre' in msg and 'email' in msg for msg in recent_bot_messages[-2:]):
-                return "¡Excelente! Para agendar la demo, ¿me puedes dar tu nombre completo y email?"
+        # CASO 4: Usuario confirmó interés pero falta recopilar datos
+        if has_confirmation and has_service_info and not self.collected_data['all_data_complete']:
+            # Pedir todos los datos de una vez
+            missing_data = []
+            if not self.collected_data['name'] or self.collected_data['name'] == 'Cliente':
+                missing_data.append("nombre completo")
+            if not self.collected_data['email']:
+                missing_data.append("email")
+            if not self.collected_data['phone']:
+                missing_data.append("teléfono")
+            if not self.collected_data['company'] or self.collected_data['company'] == 'su empresa':
+                missing_data.append("empresa")
+            
+            if missing_data:
+                # Crear mensaje personalizado según lo que falta
+                if len(missing_data) >= 3:
+                    return f"¡Perfecto! Para agendar tu demo personalizada, necesito:\n\n📝 Tu nombre completo\n📧 Email corporativo\n📱 Teléfono\n🏢 Nombre de tu empresa\n\nPuedes enviarme todo junto 😊"
+                else:
+                    missing_str = " y ".join(missing_data) if len(missing_data) > 1 else missing_data[0]
+                    return f"¡Excelente! Solo necesito tu {missing_str} para agendar la demo."
             else:
-                return "Perfecto. Procederemos con el agendamiento en breve."
+                return "Perfecto. Ya tengo todos tus datos."
         
         # CASO 4: Si el usuario ya confirmó y dio horario
         if has_confirmation and has_time_info:
@@ -607,7 +668,23 @@ Responde al siguiente mensaje del cliente:"""
             import re
             message_lower = message.lower()
             
-            # Detectar y actualizar email
+            # Primero intentar parsear datos completos si el mensaje parece contener múltiples datos
+            if (',' in message and '@' in message) or (any(word in message_lower for word in ['nombre:', 'email:', 'teléfono:', 'empresa:'])):
+                complete_data = self._parse_complete_data_message(message)
+                if complete_data:
+                    for key, value in complete_data.items():
+                        if value and not self.collected_data.get(key):
+                            if key == 'name':
+                                self.collected_data['name'] = value
+                                self.contact_name = value
+                            elif key == 'company':
+                                self.collected_data['company'] = value
+                                self.company_name = value
+                            else:
+                                self.collected_data[key] = value
+                            logger.info(f"{key.title()} actualizado desde datos completos: {value}")
+            
+            # Detectar y actualizar email (si no se obtuvo ya)
             email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
             emails = re.findall(email_pattern, message)
             if emails and not self.collected_data['email']:
@@ -628,6 +705,36 @@ Responde al siguiente mensaje del cliente:"""
                     logger.info(f"Teléfono actualizado: {phones[0]}")
                     break
             
+            # Detectar nombre en el formato "nombre , email" o solo nombre
+            name_patterns = [
+                r'^([A-Za-z\s]+)\s*,\s*[A-Za-z0-9._%+-]+@',  # "Nombre , email@domain.com"
+                r'^([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s*$'      # "Nombre Apellido"
+            ]
+            
+            for pattern in name_patterns:
+                names = re.findall(pattern, message.strip())
+                if names and len(names[0].strip()) > 2:
+                    extracted_name = names[0].strip()
+                    if extracted_name.lower() != self.contact_name.lower():
+                        self.collected_data['name'] = extracted_name
+                        self.contact_name = extracted_name
+                        logger.info(f"Nombre actualizado: {extracted_name}")
+                    break
+            
+            # Detectar empresa en el mensaje
+            company_keywords = ['empresa', 'compañía', 'trabajo en', 'soy de']
+            for keyword in company_keywords:
+                if keyword in message_lower:
+                    # Extraer lo que viene después del keyword
+                    parts = message_lower.split(keyword)
+                    if len(parts) > 1:
+                        potential_company = parts[1].strip().split(',')[0].split('.')[0]
+                        if len(potential_company) > 2 and potential_company != self.company_name.lower():
+                            self.collected_data['company'] = potential_company.title()
+                            self.company_name = potential_company.title()
+                            logger.info(f"Empresa actualizada: {potential_company.title()}")
+                    break
+            
             # Detectar interés en servicios
             if 'automatización' in message_lower or 'automatizar' in message_lower:
                 self.collected_data['service_interest'] = 'automatización'
@@ -635,26 +742,111 @@ Responde al siguiente mensaje del cliente:"""
                 self.collected_data['service_interest'] = 'chatbots'
             elif 'finanzas' in message_lower:
                 self.collected_data['service_interest'] = 'finanzas'
+            elif 'web' in message_lower or 'página' in message_lower:
+                self.collected_data['service_interest'] = 'desarrollo web'
+            elif 'ia' in message_lower or 'inteligencia artificial' in message_lower:
+                self.collected_data['service_interest'] = 'IA empresarial'
             
             # Detectar confirmación de demo
             if any(word in message_lower for word in ['si claro', 'si', 'sí', 'dale', 'ok', 'perfecto', 'genial']):
                 if self.conversation_state in ['qualifying', 'scheduling']:
                     self.collected_data['demo_confirmed'] = True
             
-            # Actualizar estado de información completa
+            # Detectar selección de horario
+            if self.current_calendar_options and any(num in message_lower for num in ['1', '2', '3', 'primera', 'segunda', 'tercera']):
+                selected_slot = self.calendar_manager.parse_time_selection(message, self.current_calendar_options)
+                if selected_slot:
+                    self.collected_data['selected_time_slot'] = selected_slot
+                    logger.info(f"Horario seleccionado: {selected_slot.formatted_date} {selected_slot.formatted_time}")
+            
+            # Actualizar estados de completitud
             self.collected_data['contact_info_complete'] = bool(
                 self.collected_data['email'] and 
                 self.collected_data['phone'] and 
                 self.collected_data['name']
             )
             
+            self.collected_data['all_data_complete'] = bool(
+                self.collected_data['contact_info_complete'] and
+                self.collected_data['company'] and
+                self.collected_data['service_interest']
+            )
+            
             # Actualizar estado de conversación basado en datos recopilados
-            if self.collected_data['contact_info_complete'] and self.collected_data['demo_confirmed']:
+            if self.collected_data['selected_time_slot']:
                 self.conversation_state = "closing"
-            elif self.collected_data['service_interest'] and self.collected_data['demo_confirmed']:
+            elif self.collected_data['all_data_complete'] and self.collected_data['demo_confirmed']:
                 self.conversation_state = "scheduling"
+            elif self.collected_data['service_interest'] and self.collected_data['demo_confirmed']:
+                self.conversation_state = "qualifying"
             elif self.collected_data['service_interest']:
                 self.conversation_state = "qualifying"
             
         except Exception as e:
             logger.error(f"Error updating collected data: {e}")
+    
+    def _parse_complete_data_message(self, message: str) -> Dict[str, str]:
+        """Parsear mensaje que contiene múltiples datos del usuario"""
+        try:
+            import re
+            
+            extracted_data = {}
+            
+            # Patrones más sofisticados para detectar datos en conjunto
+            
+            # Patrón: "Nombre, email@domain.com, 3201234567, Empresa S.A.S"
+            pattern1 = r'^([^,]+),\s*([^,\s]+@[^,\s]+),\s*([^,\s]+),\s*(.+)$'
+            match1 = re.match(pattern1, message.strip())
+            if match1:
+                extracted_data['name'] = match1.group(1).strip()
+                extracted_data['email'] = match1.group(2).strip()
+                extracted_data['phone'] = match1.group(3).strip()
+                extracted_data['company'] = match1.group(4).strip()
+                return extracted_data
+            
+            # Patrón: "Nombre: Juan Pérez, Email: juan@empresa.com, Teléfono: 3201234567"
+            patterns = {
+                'name': r'(?:nombre|name):\s*([^,\n]+)',
+                'email': r'(?:email|correo):\s*([^\s,\n]+@[^\s,\n]+)',
+                'phone': r'(?:teléfono|telefono|phone|celular):\s*([^\s,\n]+)',
+                'company': r'(?:empresa|company|compañía):\s*([^,\n]+)'
+            }
+            
+            for key, pattern in patterns.items():
+                match = re.search(pattern, message.lower())
+                if match:
+                    extracted_data[key] = match.group(1).strip()
+            
+            # Si no encontró patrones estructurados, intentar detección por separado
+            if not extracted_data:
+                # Buscar email
+                email_match = re.search(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', message)
+                if email_match:
+                    extracted_data['email'] = email_match.group()
+                
+                # Buscar teléfono
+                phone_match = re.search(r'\b(?:3\d{9}|\+57\s*3\d{9}|\d{10})\b', message)
+                if phone_match:
+                    extracted_data['phone'] = phone_match.group()
+                
+                # El resto podría ser nombre y empresa
+                remaining_text = message
+                if email_match:
+                    remaining_text = remaining_text.replace(email_match.group(), '')
+                if phone_match:
+                    remaining_text = remaining_text.replace(phone_match.group(), '')
+                
+                # Limpiar y dividir lo que queda
+                remaining_parts = [part.strip() for part in remaining_text.replace(',', '').split() if part.strip()]
+                if len(remaining_parts) >= 2:
+                    # Primeras palabras como nombre
+                    extracted_data['name'] = ' '.join(remaining_parts[:2])
+                    # Resto como empresa
+                    if len(remaining_parts) > 2:
+                        extracted_data['company'] = ' '.join(remaining_parts[2:])
+            
+            return extracted_data
+            
+        except Exception as e:
+            logger.error(f"Error parsing complete data: {e}")
+            return {}
