@@ -652,15 +652,56 @@ except ImportError as e:
 async def whatsapp_webhook_endpoint(token: str, request: Request):
     """Endpoint WhatsApp - completamente separado del voice system"""
     
-    if not WHATSAPP_ENABLED:
-        raise HTTPException(status_code=503, detail="WhatsApp bot service not enabled")
+    logger.info(f"🔍 ENDPOINT DEBUG - WhatsApp webhook called with token: {token[:10]}...")
+    logger.info(f"🔍 ENDPOINT DEBUG - WHATSAPP_ENABLED: {WHATSAPP_ENABLED}")
     
     try:
+        # Capturar datos del webhook PRIMERO para debugging
+        webhook_data = await request.json()
+        logger.info("=" * 80)
+        logger.info("🔍 REAL WEBHOOK DATA FROM CHATWOOT:")
+        logger.info("=" * 80)
+        logger.info(f"Headers: {dict(request.headers)}")
+        import json
+        logger.info(json.dumps(webhook_data, indent=2, ensure_ascii=False))
+        logger.info("=" * 80)
+        
+        # Crear nuevo request con los datos ya leídos
+        class MockRequest:
+            def __init__(self, data):
+                self._data = data
+                self.headers = request.headers
+            
+            async def json(self):
+                return self._data
+        
+        mock_request = MockRequest(webhook_data)
+        
+        if not WHATSAPP_ENABLED:
+            logger.error("❌ WhatsApp bot service not enabled")
+            raise HTTPException(status_code=503, detail="WhatsApp bot service not enabled")
+        
+        # Validar token
+        expected_token = os.getenv('CHATWOOT_WEBHOOK_TOKEN', 'default-token')
+        if token != expected_token:
+            logger.warning(f"❌ Invalid webhook token received: {token[:10]}...")
+            raise HTTPException(status_code=401, detail="Invalid webhook token")
+        
+        logger.info("✅ Token validation passed, processing webhook...")
+        
         # Procesar con handler completo
-        result = await whatsapp_webhook_handler.handle_webhook(request)
+        result = await whatsapp_webhook_handler.handle_webhook(mock_request)
+        
+        logger.info(f"🔍 ENDPOINT DEBUG - Handler result: {result}")
+        
         return result
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"WhatsApp webhook error: {e}")
+        logger.error(f"❌ WhatsApp webhook error: {e}")
+        import traceback
+        logger.error(f"❌ Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get('/health/whatsapp')

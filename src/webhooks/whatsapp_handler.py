@@ -52,33 +52,47 @@ class WhatsAppWebhookHandler:
     def _is_processable_message(self, webhook_data: Dict[str, Any]) -> bool:
         """Verificar si el mensaje debe ser procesado"""
         try:
+            logger.info(f"🔍 PROCESSABLE DEBUG - Full webhook data: {webhook_data}")
+            
             # Verificar que sea un mensaje entrante de una conversación
-            if webhook_data.get('event') != 'message_created':
-                logger.info(f"Ignoring non-message event: {webhook_data.get('event')}")
+            event = webhook_data.get('event')
+            logger.info(f"🔍 PROCESSABLE DEBUG - Event: {event}")
+            
+            if event != 'message_created':
+                logger.info(f"Ignoring non-message event: {event}")
                 return False
             
             # Verificar que tenga estructura básica de mensaje
             message = webhook_data.get('message', {})
+            logger.info(f"🔍 PROCESSABLE DEBUG - Message: {message}")
+            
             if not message:
                 logger.info("No message data found")
                 return False
             
             # Ignorar mensajes salientes (del bot)
-            if message.get('message_type') == 'outgoing':
+            message_type = message.get('message_type')
+            logger.info(f"🔍 PROCESSABLE DEBUG - Message type: {message_type}")
+            
+            if message_type == 'outgoing':
                 logger.info("Ignoring outgoing message")
                 return False
             
             # Verificar que tenga contenido
             content = message.get('content', '').strip()
+            logger.info(f"🔍 PROCESSABLE DEBUG - Content: '{content}'")
+            
             if not content:
                 logger.info("Message has no content")
                 return False
             
-            logger.info(f"Message is processable: {content[:50]}...")
+            logger.info(f"✅ Message is processable: {content[:50]}...")
             return True
             
         except Exception as e:
-            logger.error(f"Error checking if message is processable: {e}")
+            logger.error(f"❌ Error checking if message is processable: {e}")
+            import traceback
+            logger.error(f"❌ Traceback: {traceback.format_exc()}")
             return False
     
     def _extract_conversation_data(self, webhook_data: Dict[str, Any]) -> Dict[str, Any]:
