@@ -4,7 +4,7 @@ from typing import Dict, Any
 import asyncio
 from datetime import datetime
 
-from src.agents.whatsapp_agent import TDXWhatsAppAgentV2 as TDXWhatsAppBot
+from src.agents.whatsapp_agent import TDXWhatsAppAgentClean as TDXWhatsAppBot
 # from whatsapp_security import WhatsAppWebhookSecurity
 # from whatsapp_metrics import whatsapp_metrics
 
