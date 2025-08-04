@@ -317,6 +317,35 @@ class ConversationGuard:
                         'fallback': '¡Perfecto! Te envío la invitación para mañana a las 3:00 PM. Solo necesito confirmar tu email.'
                     }
             
+            # CASO ESPECÍFICO: Repetir pregunta por teléfono después de que el usuario ya lo proporcionó
+            if ('teléfono' in current_response or 'telefono' in current_response) and any('teléfono' in resp or 'telefono' in resp for resp in recent_bot_responses[-2:]):
+                # Verificar si el usuario ya dio un número de teléfono
+                import re
+                phone_given = any(
+                    re.search(r'\b3\d{9}\b|\b\d{10}\b', msg) for msg in recent_user_messages[-3:]
+                )
+                
+                if phone_given:
+                    return {
+                        'reason': 'Usuario ya proporcionó teléfono',
+                        'fallback': '¡Perfecto! Ya tengo todos tus datos. Te contactaremos pronto para agendar la demo. ¡Gracias por tu interés!'
+                    }
+            
+            # CASO ESPECÍFICO: Repetir pregunta general después de tener datos completos
+            contact_questions = ['en qué puedo ayudarte', 'qué puedo hacer', 'cómo puedo ayudarte']
+            if any(question in current_response.lower() for question in contact_questions):
+                # Verificar si la conversación ya avanzó (tiene email, teléfono, servicio)
+                conversation_advanced = any(
+                    any(keyword in str(entry.get('content', '')) for keyword in ['email', '@', 'telefono', 'automatizacion', 'demo'])
+                    for entry in conversation_log[-5:]
+                )
+                
+                if conversation_advanced:
+                    return {
+                        'reason': 'Conversación ya avanzó, no reiniciar',
+                        'fallback': 'Perfecto. Ya tenemos todo listo. Te contactaremos pronto para coordinar la demo de automatización.'
+                    }
+            
             # CASO 2: Repetir pregunta general sobre servicios después de que el usuario especificó
             service_keywords = ['automatización', 'automatizar', 'chatbot', 'finanzas', 'conciliación']
             service_mentioned = any(

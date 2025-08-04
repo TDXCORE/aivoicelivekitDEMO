@@ -30,6 +30,17 @@ class TDXWhatsAppAgentV2:
         self.awaiting_response_type = None
         self.conversation_state = "greeting"  # greeting, qualifying, scheduling, closing
         
+        # Estado de datos del usuario recopilados
+        self.collected_data = {
+            'name': contact_name,
+            'email': None,
+            'phone': None,
+            'company': company_name,
+            'service_interest': None,
+            'demo_confirmed': False,
+            'contact_info_complete': False
+        }
+        
         # Configuración de APIs
         self.chatwoot_account_id = os.getenv('VITE_CHATWOOT_ACCOUNT_ID')
         self.chatwoot_api_token = os.getenv('VITE_CHATWOOT_API_TOKEN')
@@ -83,13 +94,16 @@ class TDXWhatsAppAgentV2:
             }
             logger.info(f"🔧 Service mapped: {service_result}")
             
-            # 3. Actualización de slots (datos del prospect)
+            # 3. Actualizar datos recopilados del usuario
+            self._update_collected_data(message_content)
+            
+            # 4. Actualización de slots (datos del prospect)
             current_prospect = self.slot_manager.get_current_prospect_info() if hasattr(self.slot_manager, 'get_current_prospect_info') else self.prospect_info
             slot_updates = self.slot_manager.extract_slots_from_message(message_content, current_prospect)
             if slot_updates:
                 logger.info(f"📊 Slots updated: {slot_updates}")
             
-            # 4. Generación de respuesta con IA
+            # 5. Generación de respuesta con IA
             ai_response = await self._generate_ai_response(message_content, intent_result, service_result)
             
             # 5. Verificación de guardia conversacional
@@ -321,14 +335,48 @@ Responde al siguiente mensaje del cliente:"""
         has_time_info = 'horario mencionado' in scheduling_info.lower()
         has_service_info = 'servicios de interés' in scheduling_info.lower()
         has_confirmation = 'confirmaciones detectadas' in scheduling_info.lower()
+        has_personal_data = 'datos personales' in scheduling_info.lower()
         
-        # RESPUESTAS CONTEXTUALES INTELIGENTES
+        # Extraer información específica de datos personales
+        has_email = 'email:' in scheduling_info.lower()
+        has_phone = 'teléfono:' in scheduling_info.lower()
+        has_name = 'nombre:' in scheduling_info.lower()
         
-        # Si el usuario ya confirmó y dio horario
+        # RESPUESTAS CONTEXTUALES INTELIGENTES BASADAS EN EL ESTADO DE LA CONVERSACIÓN
+        
+        # CASO 1: Si ya tenemos toda la información de contacto
+        if self.collected_data['contact_info_complete']:
+            return "¡Perfecto! Ya tengo todos tus datos. Te contactaremos pronto para agendar la demo de automatización. ¡Gracias por tu interés en TDX!"
+        
+        # CASO 2: Usuario proporcionó teléfono (después de email)
+        if has_phone and self.collected_data['email']:
+            return "¡Excelente! Ya tengo tu email y teléfono. Te contactaremos muy pronto para coordinar la demo de automatización."
+        
+        # CASO 3: Usuario proporcionó email pero falta teléfono
+        if has_email and not self.collected_data['phone']:
+            # Pedir teléfono solo si no lo hemos pedido recientemente
+            if not any('teléfono' in msg for msg in recent_bot_messages[-1:]):
+                return "Excelente, Freddy. Para completar el agendamiento, ¿me podrías proporcionar tu número de teléfono?"
+            else:
+                return "Perfecto. Te contactaremos al email que proporcionaste para coordinar la demo."
+        
+        # CASO 4: Usuario proporcionó teléfono pero falta email
+        if has_phone and not self.collected_data['email']:
+            return "Perfecto, ya tengo tu teléfono. ¿Me puedes proporcionar tu email para enviarte la información de la demo?"
+        
+        # CASO 3: Usuario ya confirmó interés y mencionó servicio
+        if has_confirmation and has_service_info:
+            # Si no tenemos datos personales, pedirlos
+            if not has_personal_data and not any('nombre' in msg and 'email' in msg for msg in recent_bot_messages[-2:]):
+                return "¡Excelente! Para agendar la demo, ¿me puedes dar tu nombre completo y email?"
+            else:
+                return "Perfecto. Procederemos con el agendamiento en breve."
+        
+        # CASO 4: Si el usuario ya confirmó y dio horario
         if has_confirmation and has_time_info:
             return "¡Perfecto! Agendado para mañana 3:00 PM. ¿Me confirmas tu email corporativo?"
         
-        # Si el usuario dio horario específico
+        # CASO 5: Si el usuario dio horario específico
         if has_time_info or any(word in message_lower for word in ['mañana 3pm', '3pm', 'mañana 3', 'tarde']):
             # Evitar repetir confirmación si ya se confirmó
             if not any('perfecto' in msg and 'email' in msg for msg in recent_bot_messages):
@@ -336,7 +384,11 @@ Responde al siguiente mensaje del cliente:"""
             else:
                 return "Excelente. Ya tienes todo listo para mañana 3:00 PM."
         
-        # Si el usuario ya mencionó un servicio específico
+        # CASO 6: Usuario dice "ya te dije" o similar (frustración)
+        if any(phrase in message_lower for phrase in ['ya te dije', 'ya dije', 'ya te di', 'ya proporcioné']):
+            return "Tienes razón, disculpa. Ya tengo tu información. Te contactaremos muy pronto para la demo. ¡Gracias por tu paciencia!"
+        
+        # CASO 7: Si el usuario ya mencionó un servicio específico
         if has_service_info:
             service_mentioned = None
             if 'automatización' in message_lower or 'automatizar' in message_lower:
@@ -497,6 +549,38 @@ Responde al siguiente mensaje del cliente:"""
             if confirmations:
                 scheduling_info.append(f"Confirmaciones detectadas: {confirmations}")
             
+            # Detectar información personal proporcionada
+            personal_info = []
+            
+            # Detectar emails
+            email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+            emails = re.findall(email_pattern, combined_text)
+            if emails:
+                personal_info.append(f"Email: {emails[-1]}")  # Último email mencionado
+            
+            # Detectar teléfonos (varios formatos colombianos)
+            phone_patterns = [
+                r'\b3\d{9}\b',  # Formato 3xxxxxxxxx
+                r'\b\+57\s*3\d{9}\b',  # Formato +57 3xxxxxxxxx
+                r'\b\d{10}\b',  # 10 dígitos
+                r'\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b'  # Formatos con separadores
+            ]
+            
+            for pattern in phone_patterns:
+                phones = re.findall(pattern, combined_text)
+                if phones:
+                    personal_info.append(f"Teléfono: {phones[-1]}")  # Último teléfono mencionado
+                    break
+            
+            # Detectar nombres (después de comas o al inicio)
+            name_pattern = r'(?:^|\s|,\s*)([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*?)(?:\s*,|\s*$)'
+            names = re.findall(name_pattern, current_message)
+            if names and len(names[0]) > 2:  # Evitar palabras muy cortas
+                personal_info.append(f"Nombre: {names[0]}")
+            
+            if personal_info:
+                scheduling_info.append(f"Datos personales: {'; '.join(personal_info)}")
+            
             # Detectar servicios específicos mencionados
             service_mentions = []
             if 'chatbot' in combined_text:
@@ -516,3 +600,61 @@ Responde al siguiente mensaje del cliente:"""
         except Exception as e:
             logger.error(f"Error extracting scheduling info: {e}")
             return 'Error procesando información de agendamiento'
+    
+    def _update_collected_data(self, message: str):
+        """Actualizar los datos recopilados del usuario"""
+        try:
+            import re
+            message_lower = message.lower()
+            
+            # Detectar y actualizar email
+            email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+            emails = re.findall(email_pattern, message)
+            if emails and not self.collected_data['email']:
+                self.collected_data['email'] = emails[0]
+                logger.info(f"Email actualizado: {emails[0]}")
+            
+            # Detectar y actualizar teléfono
+            phone_patterns = [
+                r'\b3\d{9}\b',  # Formato 3xxxxxxxxx
+                r'\b\+57\s*3\d{9}\b',  # Formato +57 3xxxxxxxxx
+                r'\b\d{10}\b',  # 10 dígitos
+            ]
+            
+            for pattern in phone_patterns:
+                phones = re.findall(pattern, message)
+                if phones and not self.collected_data['phone']:
+                    self.collected_data['phone'] = phones[0]
+                    logger.info(f"Teléfono actualizado: {phones[0]}")
+                    break
+            
+            # Detectar interés en servicios
+            if 'automatización' in message_lower or 'automatizar' in message_lower:
+                self.collected_data['service_interest'] = 'automatización'
+            elif 'chatbot' in message_lower:
+                self.collected_data['service_interest'] = 'chatbots'
+            elif 'finanzas' in message_lower:
+                self.collected_data['service_interest'] = 'finanzas'
+            
+            # Detectar confirmación de demo
+            if any(word in message_lower for word in ['si claro', 'si', 'sí', 'dale', 'ok', 'perfecto', 'genial']):
+                if self.conversation_state in ['qualifying', 'scheduling']:
+                    self.collected_data['demo_confirmed'] = True
+            
+            # Actualizar estado de información completa
+            self.collected_data['contact_info_complete'] = bool(
+                self.collected_data['email'] and 
+                self.collected_data['phone'] and 
+                self.collected_data['name']
+            )
+            
+            # Actualizar estado de conversación basado en datos recopilados
+            if self.collected_data['contact_info_complete'] and self.collected_data['demo_confirmed']:
+                self.conversation_state = "closing"
+            elif self.collected_data['service_interest'] and self.collected_data['demo_confirmed']:
+                self.conversation_state = "scheduling"
+            elif self.collected_data['service_interest']:
+                self.conversation_state = "qualifying"
+            
+        except Exception as e:
+            logger.error(f"Error updating collected data: {e}")
