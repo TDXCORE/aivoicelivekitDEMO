@@ -58,84 +58,17 @@ class ConversationGuard:
         
     def check_for_loops(self, response: str, conversation_id: str, 
                        conversation_log: List[Dict[str, Any]]) -> str:
-        """Verificar loops y aplicar fallback si es necesario"""
+        """DESACTIVADO TEMPORALMENTE - Permitir flujo normal sin interferencia"""
         try:
-            # Verificar loops específicos de agendamiento PRIMERO
-            scheduling_loop = self._detect_scheduling_loop(response, conversation_log)
-            if scheduling_loop:
-                logger.warning(f"Loop de agendamiento detectado en {conversation_id}: {scheduling_loop['reason']}")
-                # Si el fallback es None, permitir que el flujo normal continúe sin intervenir
-                if scheduling_loop['fallback'] is None:
-                    logger.info(f"Permitiendo flujo normal para {conversation_id}")
-                    # No hacer nada, continuar con el flujo normal
-                else:
-                    return scheduling_loop['fallback']
-            
-            # Generar hash de la respuesta normalizada
-            response_hash = self._generate_response_hash(response)
-            
-            # Inicializar historial si no existe
-            if conversation_id not in self.pattern_history:
-                self.pattern_history[conversation_id] = {}
-            
-            patterns = self.pattern_history[conversation_id]
-            now = datetime.now()
-            
-            # Limpiar patrones antiguos
-            self._cleanup_old_patterns(patterns, now)
-            
-            # Verificar si es respuesta repetida
-            if response_hash in patterns:
-                pattern = patterns[response_hash]
-                pattern.count += 1
-                pattern.last_seen = now
-                
-                # Si supera el límite, aplicar fallback
-                if pattern.count > self.max_repeats:
-                    logger.warning(f"Loop detectado en {conversation_id}: '{response[:50]}...' repetido {pattern.count} veces")
-                    
-                    # Determinar tipo de fallback necesario
-                    fallback = self._select_fallback(response, conversation_log, conversation_id)
-                    
-                    # Reset el patrón para evitar loops infinitos
-                    del patterns[response_hash]
-                    
-                    return fallback
-            else:
-                # Nueva respuesta, agregar al historial
-                patterns[response_hash] = ResponsePattern(
-                    content=response,
-                    hash=response_hash,
-                    count=1,
-                    first_seen=now,
-                    last_seen=now
-                )
-            
-            # Verificar longitud de conversación
-            if len(conversation_log) > self.max_conversation_length:
-                logger.info(f"Conversación larga detectada ({len(conversation_log)} intercambios), forzando agendamiento")
-                
-                # Verificar si hay confirmación de agendamiento en mensajes recientes
-                recent_messages = [entry.get('content', '').lower() for entry in conversation_log[-3:]]
-                confirmation_keywords = ['si', 'sí', 'yes', 'agendemos', 'dale', 'ok', 'claro', 'perfecto', 'genial']
-                
-                if any(any(keyword in msg for keyword in confirmation_keywords) for msg in recent_messages):
-                    # Usuario ya confirmó, no repetir la pregunta
-                    return "Perfecto. ¿Qué día y hora te conviene?"
-                else:
-                    return "Conversación larga. ¿Agendamos llamada?"
-            
-            # Verificar patrones problemáticos
-            if self._is_problematic_response(response):
-                logger.warning(f"Respuesta problemática detectada: {response[:50]}...")
-                return self._get_escape_response()
-            
+            # DESACTIVADO: ConversationGuard está causando problemas
+            # Simplemente devolver la respuesta original sin modificaciones
+            logger.info(f"ConversationGuard DESACTIVADO para {conversation_id} - permitiendo flujo normal")
             return response
             
         except Exception as e:
             logger.error(f"Error en conversation guard: {e}")
-            # En caso de error, aplicar fallback seguro
-            return "Error técnico. ¿Agendamos llamada?"
+            # En caso de error, devolver respuesta original
+            return response
     
     def _generate_response_hash(self, response: str) -> str:
         """Generar hash normalizado de la respuesta"""
