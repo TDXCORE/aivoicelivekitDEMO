@@ -64,7 +64,12 @@ class ConversationGuard:
             scheduling_loop = self._detect_scheduling_loop(response, conversation_log)
             if scheduling_loop:
                 logger.warning(f"Loop de agendamiento detectado en {conversation_id}: {scheduling_loop['reason']}")
-                return scheduling_loop['fallback']
+                # Si el fallback es None, permitir que el flujo normal continúe sin intervenir
+                if scheduling_loop['fallback'] is None:
+                    logger.info(f"Permitiendo flujo normal para {conversation_id}")
+                    # No hacer nada, continuar con el flujo normal
+                else:
+                    return scheduling_loop['fallback']
             
             # Generar hash de la respuesta normalizada
             response_hash = self._generate_response_hash(response)
@@ -364,10 +369,18 @@ class ConversationGuard:
             # CASO 3: Bucle infinito en confirmación de agendamiento
             confirmation_responses = [resp for resp in recent_bot_responses if 'agend' in resp or 'reunión' in resp or 'llamada' in resp]
             if len(confirmation_responses) >= 2 and ('agend' in current_response or 'reunión' in current_response):
-                return {
-                    'reason': 'Bucle infinito en confirmaciones de agendamiento',
-                    'fallback': 'Te contacto directamente. ¿Cuál es tu mejor número de teléfono?'
-                }
+                # Verificar si el usuario está respondiendo a opciones de calendario
+                user_selecting_option = any(
+                    any(option in msg for option in ['1', '2', '3', 'primera', 'segunda', 'tercera'])
+                    for msg in recent_user_messages[-2:]
+                )
+                
+                # Si el usuario está seleccionando opciones, no es un bucle
+                if not user_selecting_option:
+                    return {
+                        'reason': 'Bucle infinito en confirmaciones de agendamiento',
+                        'fallback': 'Te contacto directamente. ¿Cuál es tu mejor número de teléfono?'
+                    }
             
             # CASO 4: El usuario confirma pero el bot sigue preguntando lo mismo
             user_confirmations = [msg for msg in recent_user_messages[-2:] if any(

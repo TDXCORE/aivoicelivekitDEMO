@@ -394,9 +394,29 @@ Responde al siguiente mensaje del cliente:"""
                 # No entendió la selección, clarificar
                 return "Por favor indica qué opción prefieres respondiendo con 1, 2 o 3 😊"
         
-        # CASO 2: Usuario proporcionó teléfono (después de email)
+        # CASO 2: Usuario proporcionó teléfono (después de email) - MOSTRAR OPCIONES DE CALENDARIO
         if has_phone and self.collected_data['email']:
-            return "¡Excelente! Ya tengo tu email y teléfono. Te contactaremos muy pronto para coordinar la demo de automatización."
+            # Verificar si ya tenemos todos los datos necesarios
+            if self.collected_data['name'] and self.collected_data['email'] and self.collected_data['phone']:
+                self.collected_data['all_data_complete'] = True
+                
+                # Si no hemos mostrado opciones de calendario, mostrarlas ahora
+                if not self.collected_data['calendar_options_shown']:
+                    slots = self.calendar_manager.get_next_available_slots(3)
+                    self.current_calendar_options = slots
+                    self.collected_data['calendar_options_shown'] = True
+                    
+                    service_interest = self.collected_data.get('service_interest', 'automatización')
+                    options_msg = self.calendar_manager.format_options_message(
+                        slots, 
+                        self.collected_data['name'], 
+                        service_interest
+                    )
+                    return options_msg
+                else:
+                    return "¡Excelente! Ya tengo tu email y teléfono. Te contactaremos muy pronto para coordinar la demo de automatización."
+            else:
+                return "¡Excelente! Ya tengo tu email y teléfono. Te contactaremos muy pronto para coordinar la demo de automatización."
         
         # CASO 3: Usuario proporcionó email pero falta teléfono
         if has_email and not self.collected_data['phone']:
@@ -673,7 +693,7 @@ Responde al siguiente mensaje del cliente:"""
                 complete_data = self._parse_complete_data_message(message)
                 if complete_data:
                     for key, value in complete_data.items():
-                        if value and not self.collected_data.get(key):
+                        if value:  # Actualizar siempre si hay valor, no solo si no existe
                             if key == 'name':
                                 self.collected_data['name'] = value
                                 self.contact_name = value
@@ -766,11 +786,19 @@ Responde al siguiente mensaje del cliente:"""
                 self.collected_data['name']
             )
             
+            # Para all_data_complete, solo necesitamos nombre, email, teléfono y servicio de interés
+            # La empresa puede ser opcional o usar la predeterminada
             self.collected_data['all_data_complete'] = bool(
-                self.collected_data['contact_info_complete'] and
-                self.collected_data['company'] and
-                self.collected_data['service_interest']
+                self.collected_data['email'] and
+                self.collected_data['phone'] and
+                self.collected_data['name'] and
+                self.collected_data.get('service_interest')
             )
+            
+            # Log para debugging
+            if self.collected_data['phone'] and self.collected_data['email']:
+                logger.info(f"Datos completos detectados: email={self.collected_data['email']}, phone={self.collected_data['phone']}, name={self.collected_data['name']}, service={self.collected_data.get('service_interest')}")
+                logger.info(f"all_data_complete: {self.collected_data['all_data_complete']}")
             
             # Actualizar estado de conversación basado en datos recopilados
             if self.collected_data['selected_time_slot']:
