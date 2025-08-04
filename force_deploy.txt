@@ -1,2 +1,0 @@
-Force deploy timestamp: 2025-07-28 20:30:00
-Debug logging enabled for webhook and WhatsApp flow
