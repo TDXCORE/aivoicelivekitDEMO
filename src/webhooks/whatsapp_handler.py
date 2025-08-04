@@ -52,7 +52,7 @@ class WhatsAppWebhookHandler:
     def _is_processable_message(self, webhook_data: Dict[str, Any]) -> bool:
         """Verificar si el mensaje debe ser procesado"""
         try:
-            logger.info(f"🔍 PROCESSABLE DEBUG - Full webhook data: {webhook_data}")
+            logger.info(f"🔍 PROCESSABLE DEBUG - Full webhook data keys: {list(webhook_data.keys())}")
             
             # Verificar que sea un mensaje entrante de una conversación
             event = webhook_data.get('event')
@@ -62,28 +62,33 @@ class WhatsAppWebhookHandler:
                 logger.info(f"Ignoring non-message event: {event}")
                 return False
             
-            # Verificar que tenga estructura básica de mensaje
-            message = webhook_data.get('message', {})
-            logger.info(f"🔍 PROCESSABLE DEBUG - Message: {message}")
+            # En la estructura real de Chatwoot, los datos del mensaje están en el nivel superior
+            message_type = webhook_data.get('message_type')
+            content = webhook_data.get('content', '').strip()
             
-            if not message:
-                logger.info("No message data found")
+            logger.info(f"🔍 PROCESSABLE DEBUG - Message type: {message_type}")
+            logger.info(f"🔍 PROCESSABLE DEBUG - Content: '{content}'")
+            
+            # Ignorar mensajes salientes (del bot/usuario)
+            # En Chatwoot: "incoming" = del contacto, "outgoing" = del agente/bot
+            if message_type == 'outgoing':
+                logger.info("Ignoring outgoing message (from agent/bot)")
                 return False
             
-            # Ignorar mensajes salientes (del bot)
-            message_type = message.get('message_type')
-            logger.info(f"🔍 PROCESSABLE DEBUG - Message type: {message_type}")
-            
-            if message_type == 'outgoing':
-                logger.info("Ignoring outgoing message")
+            # Verificar que sea mensaje entrante
+            if message_type != 'incoming':
+                logger.info(f"Ignoring message type: {message_type}")
                 return False
             
             # Verificar que tenga contenido
-            content = message.get('content', '').strip()
-            logger.info(f"🔍 PROCESSABLE DEBUG - Content: '{content}'")
-            
             if not content:
                 logger.info("Message has no content")
+                return False
+            
+            # Verificar que tenga conversación
+            conversation = webhook_data.get('conversation', {})
+            if not conversation:
+                logger.info("No conversation data found")
                 return False
             
             logger.info(f"✅ Message is processable: {content[:50]}...")
@@ -98,23 +103,32 @@ class WhatsAppWebhookHandler:
     def _extract_conversation_data(self, webhook_data: Dict[str, Any]) -> Dict[str, Any]:
         """Extraer datos de la conversación del webhook"""
         try:
+            # En la estructura real de Chatwoot, los datos están distribuidos
             conversation = webhook_data.get('conversation', {})
-            message = webhook_data.get('message', {})
-            contact = conversation.get('meta', {}).get('sender', {})
+            content = webhook_data.get('content', '').strip()
+            
+            # El sender está en conversation.meta.sender
+            sender = conversation.get('meta', {}).get('sender', {})
+            
+            logger.info(f"🔍 EXTRACT DEBUG - Conversation ID: {conversation.get('id')}")
+            logger.info(f"🔍 EXTRACT DEBUG - Content: '{content}'")
+            logger.info(f"🔍 EXTRACT DEBUG - Sender: {sender}")
             
             return {
                 'conversation_id': conversation.get('id'),
-                'message_content': message.get('content', '').strip(),
+                'message_content': content,
                 'contact': {
-                    'id': contact.get('id'),
-                    'name': contact.get('name', 'Cliente'),
-                    'phone': contact.get('phone_number', ''),
-                    'email': contact.get('email', ''),
-                    'company_name': contact.get('custom_attributes', {}).get('company_name', '')
+                    'id': sender.get('id'),
+                    'name': sender.get('name', 'Cliente'),
+                    'phone': sender.get('phone_number', ''),
+                    'email': sender.get('email', ''),
+                    'company_name': sender.get('custom_attributes', {}).get('company_name', '')
                 }
             }
         except Exception as e:
-            logger.error(f"Error extracting conversation data: {e}")
+            logger.error(f"❌ Error extracting conversation data: {e}")
+            import traceback
+            logger.error(f"❌ Traceback: {traceback.format_exc()}")
             return {}
     
     async def process_customer_message(self, webhook_data: Dict[str, Any], start_time: datetime) -> Dict[str, Any]:
