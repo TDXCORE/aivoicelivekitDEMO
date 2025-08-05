@@ -538,7 +538,7 @@ PERSONALIDAD: Empático, natural, directo. Máximo 1 emoji por mensaje."""
             return "Entiendo. Cuando tengas presupuesto disponible, estaremos aquí para ayudarte. ¡Gracias por contactarnos!"
     
     async def _handle_show_calendar_options(self, function_args: Dict) -> str:
-        """Mostrar opciones de calendario disponibles"""
+        """Mostrar opciones de calendario disponibles REALES"""
         try:
             # Verificar que tenemos presupuesto confirmado antes de mostrar calendario
             if not self.collected_data['budget_confirmed']:
@@ -549,35 +549,78 @@ PERSONALIDAD: Empático, natural, directo. Máximo 1 emoji por mensaje."""
             # Marcar que ya mostramos las opciones
             self.collected_data['calendar_options_shown'] = True
             
-            # Opciones directas y cortas
-            options_msg = f"¡Listo {self.collected_data['name']}!\n\n1. Mañana 9:00 AM\n2. Mañana 10:00 AM\n3. Mañana 11:00 AM\n\n¿Cuál opción? Solo el número 📅"
+            logger.info(f"🔍 Obteniendo horarios disponibles REALES para {self.collected_data['name']}")
             
-            return options_msg
+            # NUEVO: Obtener horarios disponibles reales del calendario
+            available_slots = await self.graph_client.get_real_available_slots(max_slots=3)
+            
+            if available_slots and len(available_slots) >= 3:
+                # Guardar las opciones para referencia posterior
+                self.collected_data['available_slots'] = available_slots
+                
+                # Formatear opciones para WhatsApp
+                options_msg = f"¡Listo {self.collected_data['name']}!\n\n"
+                for i, slot in enumerate(available_slots[:3], 1):
+                    options_msg += f"{i}. {slot['formatted']}\n"
+                options_msg += "\n¿Cuál opción? Solo el número 📅"
+                
+                logger.info(f"✅ Mostrando {len(available_slots)} horarios reales disponibles")
+                return options_msg
+            else:
+                # Fallback si no hay suficientes slots disponibles
+                logger.warning("⚠️ No se encontraron suficientes horarios disponibles, usando fallback")
+                fallback_slots = [
+                    {"date": "2025-08-06", "time": "09:00 AM", "formatted": "Mañana 9:00 AM"},
+                    {"date": "2025-08-06", "time": "10:00 AM", "formatted": "Mañana 10:00 AM"},
+                    {"date": "2025-08-06", "time": "11:00 AM", "formatted": "Mañana 11:00 AM"}
+                ]
+                self.collected_data['available_slots'] = fallback_slots
+                
+                options_msg = f"¡Listo {self.collected_data['name']}!\n\n"
+                for i, slot in enumerate(fallback_slots, 1):
+                    options_msg += f"{i}. {slot['formatted']}\n"
+                options_msg += "\n¿Cuál opción? Solo el número 📅"
+                
+                return options_msg
             
         except Exception as e:
             logger.error(f"Error handling show_calendar_options: {e}")
+            # Fallback de emergencia
             return "¿Mañana 10am está bien?"
     
     async def _handle_schedule_meeting(self, function_args: Dict) -> str:
-        """Agendar reunión real usando Microsoft Graph"""
+        """Agendar reunión real usando Microsoft Graph con horarios REALES"""
         try:
             option_selected = function_args.get('option_selected', '1')
             
-            # Mapear opción a horario
-            time_mapping = {
-                "1": {"date": "2025-08-06", "time": "09:00", "display": "Mañana 9:00 AM"},
-                "2": {"date": "2025-08-06", "time": "10:00", "display": "Mañana 10:00 AM"},
-                "3": {"date": "2025-08-06", "time": "11:00", "display": "Mañana 11:00 AM"}
-            }
+            # NUEVO: Usar los horarios reales que se mostraron al usuario
+            available_slots = self.collected_data.get('available_slots', [])
             
-            selected_time = time_mapping.get(option_selected, time_mapping["1"])
+            if available_slots and len(available_slots) >= int(option_selected):
+                # Usar el horario real seleccionado
+                selected_slot = available_slots[int(option_selected) - 1]
+                selected_time = {
+                    "date": selected_slot['date'],
+                    "time": selected_slot['time'],
+                    "display": selected_slot['formatted']
+                }
+                logger.info(f"✅ Usando horario REAL seleccionado: {selected_time}")
+            else:
+                # Fallback a horarios hardcodeados si no hay slots disponibles
+                logger.warning("⚠️ No hay slots disponibles guardados, usando fallback")
+                time_mapping = {
+                    "1": {"date": "2025-08-06", "time": "09:00 AM", "display": "Mañana 9:00 AM"},
+                    "2": {"date": "2025-08-06", "time": "10:00 AM", "display": "Mañana 10:00 AM"},
+                    "3": {"date": "2025-08-06", "time": "11:00 AM", "display": "Mañana 11:00 AM"}
+                }
+                selected_time = time_mapping.get(option_selected, time_mapping["1"])
             
             # Actualizar estado
             self.collected_data['selected_time_slot'] = selected_time['display']
             self.collected_data['meeting_confirmed'] = True
             
             # Agendar reunión real con Microsoft Graph CON RESUMEN DETALLADO
-            logger.info(f"🔧 Agendando reunión real con Microsoft Graph...")
+            logger.info(f"🔧 Agendando reunión real con Microsoft Graph para {selected_time['display']}...")
             
             # Preparar datos completos para la reunión
             meeting_data = {
@@ -599,7 +642,7 @@ PERSONALIDAD: Empático, natural, directo. Máximo 1 emoji por mensaje."""
                 # Reunión agendada exitosamente - Respuesta DIRECTA
                 confirmation_msg = f"¡Perfecto {self.collected_data['name']}! 🎉\n\n✅ {selected_time['display']} confirmado\n📧 Invitación enviada\n\n¡Nos vemos!"
                 
-                logger.info(f"✅ Reunión agendada exitosamente para {self.collected_data['name']}")
+                logger.info(f"✅ Reunión agendada exitosamente para {self.collected_data['name']} - {selected_time['display']}")
                 return confirmation_msg
             else:
                 # Error al agendar, pero confirmar de todas formas

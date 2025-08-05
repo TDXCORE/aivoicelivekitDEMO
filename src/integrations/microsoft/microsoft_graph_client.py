@@ -99,11 +99,29 @@ class MicrosoftGraphClient:
             request_config.query_parameters.end_date_time = end_date.isoformat()
             request_config.query_parameters.select = ['start', 'end', 'subject']
             
-            events = await self.client.users.by_user_id(user_email).calendar.events.get(request_config)
+            # Add retry logic for availability check
+            max_retries = 2
+            events = None
+            for attempt in range(max_retries):
+                try:
+                    events = await asyncio.wait_for(
+                        self.client.users.by_user_id(user_email).calendar.events.get(request_config),
+                        timeout=8.0  # 8 second timeout for availability check
+                    )
+                    break  # Success, exit retry loop
+                except asyncio.TimeoutError:
+                    if attempt == max_retries - 1:  # Last attempt
+                        logger.error("Calendar availability check timeout - using fallback")
+                        return self._get_mock_availability()
+                    logger.warning(f"Calendar check timeout on attempt {attempt + 1}, retrying...")
+                    await asyncio.sleep(1)
+            
+            if events is None:
+                return self._get_mock_availability()
             
             # Generate available slots based on existing events
             available_slots = self._calculate_available_slots(events.value, start_date, end_date)
-            return available_slots[:2]  # Return max 2 slots
+            return available_slots[:3]  # Return max 3 slots for WhatsApp display
             
         except Exception as e:
             logger.error(f"Error checking calendar availability: {e}")
@@ -243,23 +261,95 @@ class MicrosoftGraphClient:
             # Fallback: return some basic alternatives
             return []
     
+    async def get_real_available_slots(self, max_slots: int = 3) -> List[Dict[str, Any]]:
+        """Get real available slots by checking calendar and business hours"""
+        try:
+            # Get date range for next 7 days
+            start_date = datetime.now()
+            end_date = start_date + timedelta(days=7)
+            
+            logger.info(f"🔍 Checking real calendar availability from {start_date.date()} to {end_date.date()}")
+            
+            # Check calendar availability
+            available_slots = await self.check_availability(start_date, end_date)
+            
+            if available_slots and len(available_slots) >= max_slots:
+                logger.info(f"✅ Found {len(available_slots)} real available slots")
+                return available_slots[:max_slots]
+            else:
+                logger.warning(f"⚠️ Only found {len(available_slots) if available_slots else 0} slots, using business hours fallback")
+                return self._get_business_hours_availability(max_slots)
+                
+        except Exception as e:
+            logger.error(f"❌ Error getting real available slots: {e}")
+            return self._get_business_hours_availability(max_slots)
+    
+    def _get_business_hours_availability(self, max_slots: int = 3) -> List[Dict[str, Any]]:
+        """Get availability using business hours validator as fallback"""
+        if BUSINESS_HOURS_AVAILABLE:
+            try:
+                # Use business hours validator to get next available slots
+                next_slots = business_hours.get_next_available_slots(days_ahead=7, max_slots=max_slots)
+                
+                available_slots = []
+                for slot in next_slots:
+                    # Format for WhatsApp display
+                    available_slots.append({
+                        "date": slot.date.strftime("%Y-%m-%d"),
+                        "time": slot.date.strftime("%I:%M %p"),
+                        "day_name": slot.date.strftime("%A"),
+                        "formatted": slot.formatted,
+                        "datetime": slot.date
+                    })
+                
+                logger.info(f"✅ Generated {len(available_slots)} business hours slots")
+                return available_slots
+                
+            except Exception as e:
+                logger.error(f"❌ Error using business hours validator: {e}")
+                return self._get_mock_availability()
+        else:
+            return self._get_mock_availability()
+    
     def _get_mock_availability(self) -> List[Dict[str, Any]]:
         """Generate mock availability when Graph API is not available"""
         from datetime import datetime, timedelta
         import random
         
-        base_date = datetime.now() + timedelta(days=2)
+        base_date = datetime.now() + timedelta(days=1)
         available_slots = []
         
-        for i in range(2):
-            slot_date = (base_date + timedelta(days=random.randint(0, 3))).replace(hour=random.choice([10, 14, 15, 16]), minute=0, second=0, microsecond=0)
+        # Generate 3 realistic business hour slots
+        for i in range(3):
+            # Add 1-3 days and pick business hours
+            days_ahead = i + 1
+            slot_date = (base_date + timedelta(days=days_ahead))
+            
+            # Skip weekends
+            while slot_date.weekday() >= 5:
+                slot_date += timedelta(days=1)
+            
+            # Pick a business hour (9 AM, 11 AM, 2 PM)
+            hour = random.choice([9, 11, 14])
+            slot_date = slot_date.replace(hour=hour, minute=0, second=0, microsecond=0)
+            
+            # Format display text
+            if i == 0:
+                day_text = "Mañana"
+            elif i == 1:
+                day_text = slot_date.strftime("%A")
+            else:
+                day_text = slot_date.strftime("%A %d/%m")
+            
             available_slots.append({
                 "date": slot_date.strftime("%Y-%m-%d"),
                 "time": slot_date.strftime("%I:%M %p"), 
                 "day_name": slot_date.strftime("%A"),
-                "formatted": f"{slot_date.strftime('%A, %B %d')} at {slot_date.strftime('%I:%M %p')}"
+                "formatted": f"{day_text} {slot_date.strftime('%I:%M %p')}",
+                "datetime": slot_date
             })
         
+        logger.info(f"📝 Generated {len(available_slots)} mock availability slots")
         return available_slots
     
     async def create_meeting_with_summary(self, attendee_email: str, meeting_date: str, meeting_time: str, 
@@ -367,12 +457,23 @@ class MicrosoftGraphClient:
             event.is_online_meeting = True
             event.online_meeting_provider = OnlineMeetingProviderType.TeamsForBusiness
             
-            # OPTIMIZED: Fast timeout for <800ms latency
+            # OPTIMIZED: Increased timeout for reliable API calls with retry logic
             user_email = os.getenv('USER_EMAIL', 'ventas@tdxcore.com')
-            created_event = await asyncio.wait_for(
-                self.client.users.by_user_id(user_email).calendar.events.post(event),
-                timeout=2.0  # OPTIMIZED: 2 second timeout (was 10s)
-            )
+            
+            # Retry logic for better reliability
+            max_retries = 2
+            for attempt in range(max_retries):
+                try:
+                    created_event = await asyncio.wait_for(
+                        self.client.users.by_user_id(user_email).calendar.events.post(event),
+                        timeout=10.0  # INCREASED: 10 second timeout for reliable API calls
+                    )
+                    break  # Success, exit retry loop
+                except asyncio.TimeoutError:
+                    if attempt == max_retries - 1:  # Last attempt
+                        raise
+                    logger.warning(f"Microsoft Graph timeout on attempt {attempt + 1}, retrying...")
+                    await asyncio.sleep(1)  # Brief delay before retry
             
             logger.info(f"✅ REAL Teams meeting with detailed summary created for {attendee_email}")
             
@@ -481,12 +582,23 @@ class MicrosoftGraphClient:
             event.is_online_meeting = True
             event.online_meeting_provider = OnlineMeetingProviderType.TeamsForBusiness
             
-            # OPTIMIZED: Fast timeout for <800ms latency
+            # OPTIMIZED: Increased timeout for reliable API calls with retry logic
             user_email = os.getenv('USER_EMAIL', 'ventas@tdxcore.com')
-            created_event = await asyncio.wait_for(
-                self.client.users.by_user_id(user_email).calendar.events.post(event),
-                timeout=2.0  # OPTIMIZED: 2 second timeout (was 10s)
-            )
+            
+            # Retry logic for better reliability
+            max_retries = 2
+            for attempt in range(max_retries):
+                try:
+                    created_event = await asyncio.wait_for(
+                        self.client.users.by_user_id(user_email).calendar.events.post(event),
+                        timeout=10.0  # INCREASED: 10 second timeout for reliable API calls
+                    )
+                    break  # Success, exit retry loop
+                except asyncio.TimeoutError:
+                    if attempt == max_retries - 1:  # Last attempt
+                        raise
+                    logger.warning(f"Microsoft Graph timeout on attempt {attempt + 1}, retrying...")
+                    await asyncio.sleep(1)  # Brief delay before retry
             
             logger.info(f"✅ REAL Teams meeting created for {attendee_email} on {meeting_date} at {meeting_time}")
             
