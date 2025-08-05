@@ -36,6 +36,8 @@ class TDXWhatsAppAgentClean:
             'budget_confirmed': False,
             'budget_declined': False,
             'budget_range': None,
+            'budget_option_selected': None,  # 1, 2, o 3
+            'budget_payment_type': None,     # "full", "installments", o "interested_in_offer"
             'calendar_options_shown': False,
             'selected_time_slot': None,
             'meeting_confirmed': False,
@@ -145,7 +147,9 @@ class TDXWhatsAppAgentClean:
                             "service_interest": {"type": "string", "description": "Servicio de interés específico"},
                             "budget_confirmed": {"type": "boolean", "description": "Si confirmó que SÍ tiene presupuesto"},
                             "budget_declined": {"type": "boolean", "description": "Si confirmó que NO tiene presupuesto"},
-                            "budget_range": {"type": "string", "description": "Rango específico si lo menciona"}
+                            "budget_range": {"type": "string", "description": "Rango específico si lo menciona"},
+                            "budget_option_selected": {"type": "string", "description": "Opción de presupuesto seleccionada: 1, 2, o 3"},
+                            "budget_payment_type": {"type": "string", "description": "Tipo de pago: full, installments, o interested_in_offer"}
                         }
                     }
                 },
@@ -169,16 +173,6 @@ class TDXWhatsAppAgentClean:
                         }
                     }
                 },
-                {
-                    "name": "end_conversation_no_budget",
-                    "description": "USAR cuando cliente confirma que NO tiene presupuesto para terminar conversación elegantemente",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "reason": {"type": "string", "description": "Razón por la que no tiene presupuesto"}
-                        }
-                    }
-                }
             ]
             
             # ELIMINADO: Prompt viejo - ahora uso _build_conversation_messages() con prompt dinámico
@@ -342,7 +336,7 @@ SIGUIENTE PASO REQUERIDO:
 REGLAS ANTI-REPETICIÓN CRÍTICAS:
 - NUNCA saludes si ya hay conversación previa
 - NUNCA preguntes datos ya capturados arriba
-- Si presupuesto fue DECLINADO, usa función end_conversation_no_budget
+- TODAS las opciones de presupuesto (1, 2, 3) continúan el flujo hacia la reunión
 - CONTINÚA desde donde se quedó la conversación
 - NO reinicies el flujo ni hagas preguntas repetidas
 
@@ -356,9 +350,9 @@ PERSONALIDAD: Empático, natural, directo. Máximo 1 emoji por mensaje."""
         if self.collected_data.get('conversation_ended'):
             return "CONVERSACIÓN TERMINADA - Ser cordial pero no continuar flujo"
         
-        # Si presupuesto fue declinado, terminar conversación
+        # Si presupuesto fue declinado, continuar con el flujo (ya no terminamos conversación)
         if self.collected_data.get('budget_declined'):
-            return "TERMINAR: Usar función end_conversation_no_budget"
+            return "CONTINUAR: Todas las opciones de presupuesto continúan el flujo"
         
         # Flujo normal
         if not self.collected_data.get('service_interest'):
@@ -385,8 +379,6 @@ PERSONALIDAD: Empático, natural, directo. Máximo 1 emoji por mensaje."""
                 return await self._handle_show_calendar_options(function_args)
             elif function_name == "schedule_meeting":
                 return await self._handle_schedule_meeting(function_args)
-            elif function_name == "end_conversation_no_budget":
-                return await self._handle_end_conversation_no_budget(function_args)
             else:
                 logger.error(f"Función desconocida: {function_name}")
                 return "Error: Función no reconocida"
@@ -454,17 +446,30 @@ PERSONALIDAD: Empático, natural, directo. Máximo 1 emoji por mensaje."""
                             self.collected_data['budget_declined'] = True
                         elif key == 'budget_range':
                             self.collected_data['budget_confirmed'] = True
+                        elif key == 'budget_option_selected':
+                            # Manejar las opciones de presupuesto específicas
+                            if value in ['1', '2', '3']:
+                                self.collected_data['budget_confirmed'] = True
+                                if value == '1':
+                                    self.collected_data['budget_payment_type'] = 'full'
+                                    self.collected_data['budget_range'] = 'Presupuesto completo disponible'
+                                elif value == '2':
+                                    self.collected_data['budget_payment_type'] = 'installments'
+                                    self.collected_data['budget_range'] = 'Pagos en partes'
+                                elif value == '3':
+                                    self.collected_data['budget_payment_type'] = 'interested_in_offer'
+                                    self.collected_data['budget_range'] = 'Interesado en oferta'
                         logger.info(f"✅ DATO ACTUALIZADO: {key} = {value}")
             
             # FLUJO INTELIGENTE - VERIFICAR ESTADO COMPLETO DESPUÉS DE CADA ACTUALIZACIÓN
             logger.info(f"🔍 Estado actual: email={bool(self.collected_data['email'])}, phone={bool(self.collected_data['phone'])}, service={bool(self.collected_data['service_interest'])}, budget={self.collected_data['budget_confirmed']}")
             
-            # 1. Si acabamos de capturar requerimiento y no tenemos presupuesto -> preguntar presupuesto
+            # 1. Si acabamos de capturar requerimiento y no tenemos presupuesto -> preguntar presupuesto específico
             if 'service_interest' in updated_fields and not self.collected_data['budget_confirmed']:
-                return f"Perfecto, {self.collected_data['service_interest']} es una excelente solución. ¿Cuentas con presupuesto para este proyecto?"
+                return f"Perfecto, {self.collected_data['service_interest']} es una excelente solución.\n\n¿Tienes disponible el presupuesto de 2.000 USD a 20.000 USD para este proyecto?\n\n1️⃣ Sí, tengo el presupuesto\n2️⃣ Sí, pero para hacer pagos en partes\n3️⃣ No, pero me interesa escuchar la oferta\n\nSolo responde con el número de tu opción."
             
-            # 2. Si acabamos de confirmar presupuesto -> pedir datos faltantes
-            if 'budget_range' in updated_fields and self.collected_data['budget_confirmed']:
+            # 2. Si acabamos de confirmar presupuesto (cualquier opción) -> pedir datos faltantes
+            if ('budget_range' in updated_fields or 'budget_option_selected' in updated_fields) and self.collected_data['budget_confirmed']:
                 if not self.collected_data['email']:
                     return "Excelente. Para coordinar la reunión, ¿me das tu email?"
                 elif not self.collected_data['phone']:
@@ -593,56 +598,11 @@ PERSONALIDAD: Empático, natural, directo. Máximo 1 emoji por mensaje."""
             return f"¡Perfecto! Tu reunión ha sido confirmada. Te contactaremos pronto con los detalles."
     
     def _generate_fallback_response(self, message: str) -> str:
-        """Respuesta de fallback SOLO cuando OpenAI falla completamente"""
-        logger.warning("⚠️ USANDO FALLBACK - OpenAI no disponible")
-        message_lower = message.lower()
+        """Respuesta de fallback MÍNIMA - Solo para desarrollo sin OpenAI"""
+        logger.warning("⚠️ USANDO FALLBACK MÍNIMO - OpenAI no disponible")
         
-        # Detectar selección de horario
-        if any(num in message_lower for num in ['1', '2', '3']) and self.collected_data['calendar_options_shown']:
-            import asyncio
-            return asyncio.run(self._handle_schedule_meeting({'option_selected': message_lower.strip()}))
-        
-        # Contar mensajes previos para determinar si es saludo inicial
-        is_first_interaction = len(self.conversation_log) <= 1
-        
-        # FALLBACK SIMPLE - NO INTERFERIR CON OPENAI
-        
-        # Saludo inicial
-        if any(word in message_lower for word in ['hola', 'epale', 'buenas', 'hey']) or is_first_interaction:
-            return f"¡Hola {self.contact_name}! Soy Mati de TDX. ¿Cómo estás hoy?"
-        
-        # Email detectado
-        if '@' in message and '.' in message:
-            self.collected_data['email'] = message.strip()
-            logger.info(f"✅ Email capturado en fallback: {self.collected_data['email']}")
-            if not self.collected_data['phone']:
-                return "Genial. ¿Y tu número de teléfono?"
-            else:
-                return "Perfecto, ya tengo tus datos."
-        
-        # Número de teléfono detectado
-        if any(char.isdigit() for char in message) and len(message.strip()) >= 8:
-            self.collected_data['phone'] = message.strip()
-            logger.info(f"✅ Teléfono capturado en fallback: {self.collected_data['phone']}")
-            return "Excelente, ya tengo tu teléfono."
-        
-        # Requerimiento de IA
-        if any(word in message_lower for word in ['ia', 'chatbot', 'bot', 'automatizacion', 'automatizar']):
-            if 'automatizar' in message_lower or 'automatizacion' in message_lower:
-                self.collected_data['service_interest'] = 'automatización de ventas'
-            else:
-                self.collected_data['service_interest'] = 'soluciones de IA'
-            return f"Perfecto, {self.collected_data['service_interest']} es una excelente solución. ¿Cuentas con presupuesto para este proyecto?"
-        
-        # Confirmación de presupuesto
-        if any(word in message_lower for word in ['si', 'sí', 'claro', 'perfecto', 'tengo']):
-            if not self.collected_data['budget_confirmed']:
-                self.collected_data['budget_confirmed'] = True
-                self.collected_data['budget_range'] = 'Confirmado'
-                return "Excelente. Para coordinar la reunión, ¿me das tu email?"
-        
-        # Default neutral
-        return "Entiendo. ¿En qué más puedo ayudarte?"
+        # En producción OpenAI siempre está disponible, este fallback es solo para desarrollo
+        return f"Hola {self.contact_name}, soy Mati de TDX. Actualmente estoy en modo de desarrollo. En producción, tendré todas mis capacidades de IA disponibles para ayudarte con tu proyecto. ¿En qué puedo asistirte?"
     
     async def _send_to_chatwoot(self, message: str) -> bool:
         """Enviar respuesta a través de Chatwoot"""
