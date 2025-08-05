@@ -119,10 +119,10 @@ class TDXWhatsAppAgentClean:
                         logger.info("✅ OpenAI client initialized successfully")
                     else:
                         logger.error("❌ OPENAI_API_KEY not found in environment")
-                        return self._generate_fallback_response(message)
+                        return await self._generate_fallback_response(message)
                 except Exception as e:
                     logger.error(f"❌ Error initializing OpenAI: {e}")
-                    return self._generate_fallback_response(message)
+                    return await self._generate_fallback_response(message)
             
             # DEBUG: Log del estado actual para verificar persistencia
             logger.info(f"🔍 ESTADO PERSISTENTE - Conv: {self.conversation_id}")
@@ -653,12 +653,75 @@ PERSONALIDAD: Empático, natural, directo. Máximo 1 emoji por mensaje."""
             logger.error(f"❌ Error handling schedule_meeting: {e}")
             return f"¡Perfecto! Tu reunión ha sido confirmada. Te contactaremos pronto con los detalles."
     
-    def _generate_fallback_response(self, message: str) -> str:
-        """Respuesta de fallback MÍNIMA - Solo para desarrollo sin OpenAI"""
-        logger.warning("⚠️ USANDO FALLBACK MÍNIMO - OpenAI no disponible")
+    async def _generate_fallback_response(self, message: str) -> str:
+        """Respuesta de fallback INTELIGENTE - Detecta automáticamente el siguiente paso"""
+        logger.warning("⚠️ USANDO FALLBACK INTELIGENTE - OpenAI no disponible")
         
-        # En producción OpenAI siempre está disponible, este fallback es solo para desarrollo
-        return f"Hola {self.contact_name}, soy Mati de TDX. Actualmente estoy en modo de desarrollo. En producción, tendré todas mis capacidades de IA disponibles para ayudarte con tu proyecto. ¿En qué puedo asistirte?"
+        # NUEVO: Detectar automáticamente si debemos mostrar calendario
+        ready_for_calendar = all([
+            self.collected_data['email'],
+            self.collected_data['phone'], 
+            self.collected_data['service_interest'],
+            self.collected_data['budget_confirmed'],
+            not self.collected_data['calendar_options_shown']
+        ])
+        
+        if ready_for_calendar:
+            logger.info("🎯 FALLBACK: Detectado que debe mostrar calendario automáticamente")
+            service_type = self.collected_data.get('service_interest', 'tu proyecto')
+            return await self._handle_show_calendar_options({'service_type': service_type})
+        
+        # Detectar si usuario seleccionó opción de calendario
+        if (self.collected_data['calendar_options_shown'] and 
+            not self.collected_data['meeting_confirmed'] and 
+            message.strip() in ['1', '2', '3']):
+            logger.info(f"🎯 FALLBACK: Detectado selección de calendario: {message}")
+            return await self._handle_schedule_meeting({'option_selected': message.strip()})
+        
+        # Detectar respuestas de presupuesto
+        if (self.collected_data['service_interest'] and 
+            not self.collected_data['budget_confirmed'] and 
+            message.strip() in ['1', '2', '3']):
+            logger.info(f"🎯 FALLBACK: Detectado respuesta de presupuesto: {message}")
+            # Simular function call de extract_user_data
+            budget_data = {'budget_option_selected': message.strip()}
+            return await self._handle_extract_user_data(budget_data)
+        
+        # Detectar email
+        if '@' in message and not self.collected_data['email']:
+            logger.info(f"🎯 FALLBACK: Detectado email: {message}")
+            email_data = {'email': message.strip()}
+            return await self._handle_extract_user_data(email_data)
+        
+        # Detectar teléfono (números de 7+ dígitos)
+        import re
+        phone_pattern = r'\b\d{7,}\b'
+        if re.search(phone_pattern, message) and not self.collected_data['phone']:
+            phone = re.search(phone_pattern, message).group()
+            logger.info(f"🎯 FALLBACK: Detectado teléfono: {phone}")
+            phone_data = {'phone': phone}
+            return await self._handle_extract_user_data(phone_data)
+        
+        # Detectar requerimientos de IA
+        ai_keywords = ['chatbot', 'bot', 'ia', 'ai', 'automatizar', 'automatización', 'servicios de ai', 'servicios de ia']
+        if any(keyword in message.lower() for keyword in ai_keywords) and not self.collected_data['service_interest']:
+            logger.info(f"🎯 FALLBACK: Detectado requerimiento de IA: {message}")
+            service_data = {'service_interest': message.strip()}
+            return await self._handle_extract_user_data(service_data)
+        
+        # Respuesta genérica si no detectamos nada específico
+        next_step = self._determine_next_conversation_step()
+        
+        if "CAPTURAR: Requerimiento" in next_step:
+            return "¿Qué tipo de servicio de IA necesitas? Por ejemplo: chatbot, automatización, etc."
+        elif "PREGUNTAR: ¿Tienes presupuesto" in next_step:
+            return f"¿Tienes disponible el presupuesto de 2.000 USD a 20.000 USD para este proyecto?\n\n1️⃣ Sí, tengo el presupuesto\n2️⃣ Sí, pero para hacer pagos en partes\n3️⃣ No, pero me interesa escuchar la oferta\n\nSolo responde con el número de tu opción."
+        elif "SOLICITAR: Email" in next_step:
+            return "Para coordinar la reunión, ¿me das tu email?"
+        elif "SOLICITAR: Número" in next_step:
+            return "¿Y tu número de teléfono?"
+        else:
+            return f"Hola {self.contact_name}, soy Mati de TDX. ¿En qué puedo ayudarte hoy?"
     
     async def _send_to_chatwoot(self, message: str) -> bool:
         """Enviar respuesta a través de Chatwoot"""
