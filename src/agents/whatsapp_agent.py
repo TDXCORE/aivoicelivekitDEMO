@@ -104,9 +104,22 @@ class TDXWhatsAppAgentClean:
     async def _generate_openai_response(self, message: str) -> str:
         """Generar respuesta usando OpenAI con function calling"""
         try:
+            # SIEMPRE intentar usar OpenAI primero
             if not self.openai_client:
-                logger.warning("OpenAI not configured, using fallback")
-                return self._generate_fallback_response(message)
+                logger.warning("OpenAI not configured, attempting to initialize...")
+                # Intentar inicializar OpenAI con variable de entorno
+                try:
+                    from openai import OpenAI
+                    api_key = os.getenv('OPENAI_API_KEY')
+                    if api_key:
+                        self.openai_client = OpenAI(api_key=api_key)
+                        logger.info("✅ OpenAI client initialized successfully")
+                    else:
+                        logger.error("❌ OPENAI_API_KEY not found in environment")
+                        return self._generate_fallback_response(message)
+                except Exception as e:
+                    logger.error(f"❌ Error initializing OpenAI: {e}")
+                    return self._generate_fallback_response(message)
             
             # Construir contexto de conversación
             conversation_context = self._build_conversation_context()
@@ -160,47 +173,71 @@ class TDXWhatsAppAgentClean:
                 }
             ]
             
-            # Prompt maestro que gobierna todo el comportamiento
-            system_prompt = f"""Eres Mati, asistente virtual experto de TDX. Sé DIRECTO, EMPÁTICO y usa MÁXIMO 6-10 PALABRAS POR FRASE.
+            # Prompt maestro mejorado para conversación natural
+            system_prompt = f"""Eres Mati, asistente virtual experto de TDX (Transformación Digital Inteligente). 
 
-INFORMACIÓN DEL CLIENTE:
+PERSONALIDAD:
+- Empático, cordial y profesional
+- Conversación natural con frases cortas
+- Siempre saluda cordialmente a leads fríos
+- Paciente pero eficiente
+
+INFORMACIÓN ACTUAL DEL CLIENTE:
 - Nombre: {self.contact_name}
-- Empresa: {self.company_name}
-- Email: {self.collected_data.get('email', 'Pendiente')}
-- Teléfono: {self.collected_data.get('phone', 'Pendiente')}
-- Requerimiento: {self.collected_data.get('service_interest', 'Pendiente')}
-- Presupuesto: {self.collected_data.get('budget_range', 'Pendiente')}
+- Empresa: {self.company_name}  
+- Email: {self.collected_data.get('email', 'No capturado')}
+- Teléfono: {self.collected_data.get('phone', 'No capturado')}
+- Requerimiento: {self.collected_data.get('service_interest', 'No definido')}
+- Presupuesto confirmado: {self.collected_data.get('budget_confirmed', False)}
 
-CONTEXTO ACTUAL:
+CONTEXTO DE CONVERSACIÓN:
 {conversation_context}
 
-FLUJO OBLIGATORIO (NO SALTEAR PASOS):
-1. ENTENDER REQUERIMIENTO específico del cliente
-2. CONFIRMAR PRESUPUESTO (2.000-20.000 USD)
-3. SOLICITAR datos (nombre, email, teléfono)
-4. AGENDAR reunión de descubrimiento
+FLUJO OBLIGATORIO (NUNCA SALTEAR PASOS):
+1. SALUDO cordial (si es primer mensaje)
+2. ENTENDER requerimiento específico de IA
+3. CONFIRMAR presupuesto disponible (2.000-20.000 USD)
+4. CAPTURAR email y teléfono completos
+5. OFRECER horarios para reunión
+6. AGENDAR reunión confirmada
 
-HERRAMIENTAS:
-- extract_user_data: Datos del usuario
-- check_budget: Preguntar presupuesto
-- show_calendar_options: Mostrar horarios
-- schedule_meeting: Agendar reunión
+CUÁNDO USAR HERRAMIENTAS:
 
-REGLAS ESTRICTAS:
-1. MÁXIMO 6-10 PALABRAS POR FRASE
-2. SÉ DIRECTO Y EMPÁTICO
-3. NO saltes el tema presupuesto
-4. NO agendas sin confirmar presupuesto
-5. Un emoji máximo por mensaje
-6. SIEMPRE avanza en el flujo
+- USA extract_user_data SIEMPRE QUE DETECTES:
+  * Requerimiento específico ("necesito chatbot", "automatización", "web con IA")
+  * Email válido del cliente
+  * Número de teléfono
+  * Confirmación de presupuesto
+  * Nombre completo o empresa
 
-EJEMPLOS DE RESPUESTAS:
-- "¿Qué necesitas específicamente?"
-- "¿Tienes presupuesto de 2K-20K USD?"
-- "Perfecto. ¿Tu email?"
-- "¡Listo! ¿Mañana 10am?"
+- USA check_budget CUANDO:
+  * Ya capturaste el requerimiento
+  * Aún no confirmaste presupuesto
+  
+- USA show_calendar_options SOLO CUANDO TENGAS:
+  * Requerimiento claro capturado
+  * Presupuesto confirmado
+  * Email Y teléfono capturados
+  
+- USA schedule_meeting CUANDO:
+  * Cliente diga "1", "2", o "3" para horario
 
-Responde siguiendo estas reglas:"""
+REGLAS DE COMUNICACIÓN:
+1. Frases cortas pero naturales y empáticas
+2. SIEMPRE saluda cordialmente en primer contacto
+3. No repitas respuestas idénticas
+4. Si dicen algo no relacionado a IA, redirige suavemente
+5. Máximo 1 emoji por mensaje
+6. PROGRESA en el flujo, no te quedes en loops
+7. Haz UNA pregunta por vez
+
+EJEMPLOS DE CONVERSACIÓN NATURAL:
+- "¡Hola! Soy Mati de TDX 😊 ¿Cómo estás hoy?"
+- "Me encanta ayudarte con IA. ¿Qué tipo de solución necesitas?"
+- "Perfecto, entiendo que necesitas {tipo}. ¿Cuentas con presupuesto para este proyecto?"
+- "Genial. Para coordinar una reunión, ¿me compartes tu email?"
+
+RESPONDE DE FORMA NATURAL Y PROGRESIVA AL SIGUIENTE MENSAJE:"""
 
             # Preparar mensajes para OpenAI
             messages = [
@@ -283,50 +320,63 @@ Responde siguiendo estas reglas:"""
         """Manejar extracción de datos del usuario"""
         try:
             # Actualizar datos con los argumentos de la función
+            updated_fields = []
             for key, value in function_args.items():
                 if value and key in self.collected_data:
-                    self.collected_data[key] = value
-                    if key == 'name':
-                        self.contact_name = value
-                    elif key == 'company':
-                        self.company_name = value
-                    elif key == 'budget_range':
-                        self.collected_data['budget_confirmed'] = True
-                    logger.info(f"Dato actualizado: {key} = {value}")
+                    if self.collected_data[key] != value:  # Solo actualizar si es diferente
+                        self.collected_data[key] = value
+                        updated_fields.append(key)
+                        if key == 'name':
+                            self.contact_name = value
+                        elif key == 'company':
+                            self.company_name = value
+                        elif key == 'budget_range':
+                            self.collected_data['budget_confirmed'] = True
+                        logger.info(f"Dato capturado: {key} = {value}")
             
-            # FLUJO MEJORADO: Verificar pasos en orden
+            # PROGRESO LÓGICO DEL FLUJO:
             
-            # 1. Si no hay requerimiento específico
-            if not self.collected_data['service_interest']:
-                return "¿Qué necesitas específicamente?"
+            # Si acabamos de capturar requerimiento, preguntar presupuesto
+            if 'service_interest' in updated_fields and not self.collected_data['budget_confirmed']:
+                return f"Perfecto, {self.collected_data['service_interest']} es una excelente solución. ¿Cuentas con presupuesto para este proyecto?"
             
-            # 2. Si no hay presupuesto confirmado
-            if not self.collected_data['budget_confirmed']:
-                return "¿Tienes presupuesto 2K-20K USD?"
+            # Si acabamos de confirmar presupuesto, pedir datos de contacto
+            if 'budget_range' in updated_fields or self.collected_data['budget_confirmed']:
+                missing = []
+                if not self.collected_data['email']:
+                    missing.append("email")
+                if not self.collected_data['phone']:
+                    missing.append("teléfono")
+                
+                if missing:
+                    if len(missing) == 2:
+                        return "Excelente. Para coordinar la reunión, ¿me das tu email y teléfono?"
+                    else:
+                        return f"Perfecto. Solo me falta tu {missing[0]}."
             
-            # 3. Si faltan datos de contacto
-            missing = []
-            if not self.collected_data['email']:
-                missing.append("email")
-            if not self.collected_data['phone']:
-                missing.append("teléfono")
+            # Si acabamos de capturar email o teléfono, verificar si tenemos todo
+            if ('email' in updated_fields or 'phone' in updated_fields):
+                has_all_contact_data = bool(
+                    self.collected_data['email'] and 
+                    self.collected_data['phone'] and
+                    self.collected_data['service_interest'] and
+                    self.collected_data['budget_confirmed']
+                )
+                
+                if has_all_contact_data and not self.collected_data['calendar_options_shown']:
+                    service_type = self.collected_data.get('service_interest', 'tu proyecto')
+                    return await self._handle_show_calendar_options({'service_type': service_type})
+                elif not self.collected_data['phone']:
+                    return "Genial. ¿Y tu número de teléfono?"
+                elif not self.collected_data['email']:
+                    return "Perfecto. ¿Tu email?"
             
-            if missing:
-                if len(missing) == 2:
-                    return "Perfecto. ¿Tu email y teléfono?"
-                else:
-                    return f"Solo falta tu {missing[0]}."
-            
-            # 4. Si tenemos todo, mostrar calendario
-            if not self.collected_data['calendar_options_shown']:
-                service_type = self.collected_data.get('service_interest', 'IA empresarial')
-                return await self._handle_show_calendar_options({'service_type': service_type})
-            
-            return "¡Perfecto! Datos completos."
+            # Respuesta genérica si no hay actualizaciones
+            return "Perfecto, continuemos."
             
         except Exception as e:
             logger.error(f"Error handling extract_user_data: {e}")
-            return "Continúo con el proceso."
+            return "Entendido, sigamos con el proceso."
     
     async def _handle_check_budget(self, function_args: Dict) -> str:
         """Manejar confirmación de presupuesto"""
@@ -420,32 +470,72 @@ Responde siguiendo estas reglas:"""
             return f"¡Perfecto! Tu reunión ha sido confirmada. Te contactaremos pronto con los detalles."
     
     def _generate_fallback_response(self, message: str) -> str:
-        """Respuesta de fallback cuando OpenAI no está disponible"""
+        """Respuesta de fallback empática para leads fríos"""
         message_lower = message.lower()
         
         # Detectar selección de horario
         if any(num in message_lower for num in ['1', '2', '3']) and self.collected_data['calendar_options_shown']:
-            # Simular llamada a schedule_meeting
             import asyncio
             return asyncio.run(self._handle_schedule_meeting({'option_selected': message_lower.strip()}))
         
-        # Respuestas directas y cortas
-        if any(word in message_lower for word in ['hola', 'epale', 'buenas']):
-            return f"¡Hola {self.contact_name}! ¿Qué necesitas?"
-        elif any(word in message_lower for word in ['presupuesto', 'precio', 'costo']):
+        # Contar mensajes previos para determinar si es saludo inicial
+        is_first_interaction = len(self.conversation_log) <= 1
+        
+        # RESPUESTAS EMPÁTICAS Y NATURALES - PRIORIDAD CORRECTA
+        
+        # PRIMERO: Detección de requerimientos de IA (prioridad alta)
+        if any(word in message_lower for word in ['ia', 'inteligencia artificial', 'automatizacion', 'chatbot', 'bot', 'ai', 'soluciones', 'sistema']):
             if not self.collected_data['service_interest']:
-                return "¿Qué necesitas específicamente primero?"
-            else:
-                return "¿Tienes presupuesto 2K-20K USD?"
-        elif any(word in message_lower for word in ['si', 'sí', 'claro', 'perfecto']):
+                # Capturar el requerimiento específico
+                if 'chatbot' in message_lower or 'bot' in message_lower:
+                    self.collected_data['service_interest'] = 'chatbot'
+                elif 'automatizacion' in message_lower:
+                    self.collected_data['service_interest'] = 'automatización'
+                elif 'web' in message_lower:
+                    self.collected_data['service_interest'] = 'desarrollo web con IA'
+                else:
+                    self.collected_data['service_interest'] = 'soluciones de IA'
+                logger.info(f"Requerimiento capturado: {self.collected_data['service_interest']}")
+            
             if not self.collected_data['budget_confirmed']:
-                return "¡Perfecto! ¿Tu email y teléfono?"
+                return f"Me encanta ayudarte con {self.collected_data['service_interest']}. ¿Cuentas con presupuesto para este proyecto?"
+            else:
+                return "Perfecto. ¿Me das tu email para coordinar?"
+        
+        # SEGUNDO: Saludo inicial cordial para leads fríos
+        elif any(word in message_lower for word in ['hola', 'epale', 'buenas', 'hey']) or is_first_interaction:
+            return f"¡Hola {self.contact_name}! Soy Mati de TDX. ¿Cómo estás hoy?"
+        
+        # TERCERO: Confirmación de presupuesto
+        elif any(word in message_lower for word in ['si', 'sí', 'claro', 'perfecto', 'tengo']):
+            if not self.collected_data['budget_confirmed'] and self.collected_data.get('service_interest'):
+                self.collected_data['budget_confirmed'] = True
+                self.collected_data['budget_range'] = 'Confirmado'
+                return "Excelente. Para coordinar la reunión, ¿me das tu email?"
+            elif not self.collected_data['email']:
+                return "Perfecto. ¿Tu email?"
+            elif not self.collected_data['phone']:
+                return "Genial. ¿Y tu teléfono?"
             else:
                 return "¡Excelente! Continuemos."
-        elif any(word in message_lower for word in ['ia', 'automatizacion', 'chatbot', 'bot']):
-            return "¿Tienes presupuesto 2K-20K USD?"
+        
+        # Preguntas sobre presupuesto/precios
+        elif any(word in message_lower for word in ['presupuesto', 'precio', 'costo', 'cuanto']):
+            if not self.collected_data['service_interest']:
+                return "Con gusto te ayudo. ¿Qué tipo de solución de IA necesitas?"
+            else:
+                return "Los proyectos van desde 2K hasta 20K USD. ¿Cuentas con presupuesto en ese rango?"
+        
+        # Cosas no relacionadas (ej: "quiero ir a la luna")
+        elif not any(word in message_lower for word in ['ia', 'bot', 'automatizacion', 'web', 'sistema', 'digital']):
+            return "Interesante! En TDX nos especializamos en IA empresarial. ¿Te interesa alguna solución?"
+        
+        # Default empático
         else:
-            return "¿Qué necesitas específicamente?"
+            if not self.collected_data['service_interest']:
+                return "Me encantaría ayudarte. ¿Qué tipo de solución de IA necesitas?"
+            else:
+                return "Entiendo. ¿Cuentas con presupuesto para este proyecto?"
     
     async def _send_to_chatwoot(self, message: str) -> bool:
         """Enviar respuesta a través de Chatwoot"""
