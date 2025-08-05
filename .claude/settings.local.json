@@ -12,7 +12,9 @@
       "Bash(rm:*)",
       "Bash(mkdir:*)",
       "Bash(mv:*)",
-      "Bash(touch:*)"
+      "Bash(touch:*)",
+      "WebFetch(domain:medium.com)",
+      "WebFetch(domain:platform.openai.com)"
     ],
     "deny": []
   }

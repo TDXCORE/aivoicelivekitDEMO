@@ -102,12 +102,11 @@ class TDXWhatsAppAgentClean:
             return None
     
     async def _generate_openai_response(self, message: str) -> str:
-        """Generar respuesta usando OpenAI con function calling"""
+        """Generar respuesta usando OpenAI con conversation state management"""
         try:
             # SIEMPRE intentar usar OpenAI primero
             if not self.openai_client:
                 logger.warning("OpenAI not configured, attempting to initialize...")
-                # Intentar inicializar OpenAI con variable de entorno
                 try:
                     from openai import OpenAI
                     api_key = os.getenv('OPENAI_API_KEY')
@@ -121,15 +120,13 @@ class TDXWhatsAppAgentClean:
                     logger.error(f"❌ Error initializing OpenAI: {e}")
                     return self._generate_fallback_response(message)
             
-            # Construir contexto de conversación
-            conversation_context = self._build_conversation_context()
-            
             # DEBUG: Log del estado actual para verificar persistencia
-            logger.info(f"🔍 DEBUG ESTADO - Conv: {self.conversation_id}")
-            logger.info(f"🔍 DEBUG ESTADO - Mensajes en log: {len(self.conversation_log)}")
-            logger.info(f"🔍 DEBUG ESTADO - Email: {self.collected_data.get('email')}")
-            logger.info(f"🔍 DEBUG ESTADO - Servicio: {self.collected_data.get('service_interest')}")
-            logger.info(f"🔍 DEBUG ESTADO - Presupuesto: {self.collected_data.get('budget_confirmed')}")
+            logger.info(f"🔍 ESTADO PERSISTENTE - Conv: {self.conversation_id}")
+            logger.info(f"🔍 ESTADO PERSISTENTE - Mensajes: {len(self.conversation_log)}")
+            logger.info(f"🔍 ESTADO PERSISTENTE - Datos: email={bool(self.collected_data.get('email'))}, servicio={bool(self.collected_data.get('service_interest'))}, presupuesto={self.collected_data.get('budget_confirmed')}")
+            
+            # BEST PRACTICE: Construir contexto completo con conversation state
+            conversation_messages = self._build_conversation_messages(message)
             
             # Definir funciones disponibles para OpenAI
             functions = [
@@ -180,87 +177,12 @@ class TDXWhatsAppAgentClean:
                 }
             ]
             
-            # Prompt maestro mejorado para conversación natural
-            system_prompt = f"""Eres Mati, asistente virtual experto de TDX (Transformación Digital Inteligente). 
+            # ELIMINADO: Prompt viejo - ahora uso _build_conversation_messages() con prompt dinámico
 
-PERSONALIDAD:
-- Empático, cordial y profesional
-- Conversación natural con frases cortas
-- Siempre saluda cordialmente a leads fríos
-- Paciente pero eficiente
-
-INFORMACIÓN ACTUAL DEL CLIENTE:
-- Nombre: {self.contact_name}
-- Empresa: {self.company_name}  
-- Email: {self.collected_data.get('email', 'No capturado')}
-- Teléfono: {self.collected_data.get('phone', 'No capturado')}
-- Requerimiento: {self.collected_data.get('service_interest', 'No definido')}
-- Presupuesto confirmado: {self.collected_data.get('budget_confirmed', False)}
-
-MEMORIA DE CONVERSACIÓN PREVIA:
-{self._get_conversation_memory()}
-
-CONTEXTO DE CONVERSACIÓN:
-{conversation_context}
-
-FLUJO OBLIGATORIO (NUNCA SALTEAR PASOS):
-1. SALUDO cordial (si es primer mensaje)
-2. ENTENDER requerimiento específico de IA
-3. CONFIRMAR presupuesto disponible (2.000-20.000 USD)
-4. CAPTURAR email y teléfono completos
-5. OFRECER horarios para reunión
-6. AGENDAR reunión confirmada
-
-USAR HERRAMIENTAS DE FORMA INTELIGENTE:
-
-- USA extract_user_data INMEDIATAMENTE cuando detectes:
-  * Email válido (formato correcto @domain.com)
-  * Teléfono (números con formato)
-  * Requerimiento específico de IA (chatbot, automatización, web)
-  * Confirmación de presupuesto ("sí", "claro", "tengo", etc.)
-
-- USA check_budget SOLO cuando:
-  * Tienes requerimiento capturado
-  * NO tienes presupuesto confirmado aún
-  
-- USA show_calendar_options SOLO cuando:
-  * service_interest capturado ✓
-  * budget_confirmed = true ✓  
-  * email capturado ✓
-  * phone capturado ✓
-  * calendar_options_shown = false ✓
-  
-- USA schedule_meeting cuando:
-  * Usuario responda "1", "2", o "3"
-
-REGLAS DE COMUNICACIÓN CRÍTICAS:
-1. NUNCA repitas saludos si ya hay conversación previa
-2. USA la memoria de conversación - NO vuelvas a preguntar datos ya capturados
-3. Si el usuario ya dijo algo, CONTINÚA desde ahí - NO reinicies
-4. Frases cortas pero naturales y empáticas
-5. Máximo 1 emoji por mensaje
-6. PROGRESA en el flujo, no te quedes en loops
-7. Haz UNA pregunta por vez
-8. Si dicen algo no relacionado a IA, redirige suavemente
-
-EJEMPLOS DE CONVERSACIÓN NATURAL:
-- "¡Hola! Soy Mati de TDX 😊 ¿Cómo estás hoy?"
-- "Me encanta ayudarte con IA. ¿Qué tipo de solución necesitas?"
-- "Perfecto, automatización es una excelente solución. ¿Cuentas con presupuesto para este proyecto?"
-- "Genial. Para coordinar una reunión, ¿me compartes tu email?"
-
-RESPONDE DE FORMA NATURAL Y PROGRESIVA AL SIGUIENTE MENSAJE:"""
-
-            # Preparar mensajes para OpenAI
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": message}
-            ]
-            
-            # Llamar a OpenAI con function calling
+            # BEST PRACTICE: Usar conversation threading con mensajes completos
             response = self.openai_client.chat.completions.create(
                 model="gpt-3.5-turbo",
-                messages=messages,
+                messages=conversation_messages,
                 functions=functions,
                 function_call="auto",
                 max_tokens=200,
@@ -269,30 +191,18 @@ RESPONDE DE FORMA NATURAL Y PROGRESIVA AL SIGUIENTE MENSAJE:"""
             
             response_message = response.choices[0].message
             
-            # Verificar si OpenAI quiere llamar una función
+            # BEST PRACTICE: Function calling con state checkpoint
             if response_message.function_call:
                 function_name = response_message.function_call.name
                 function_args = json.loads(response_message.function_call.arguments)
                 
-                logger.info(f"🔧 OpenAI calling function: {function_name} with args: {function_args}")
+                logger.info(f"🔧 EJECUTANDO FUNCIÓN: {function_name} with args: {function_args}")
                 
-                # Ejecutar la función correspondiente y retornar INMEDIATAMENTE
-                if function_name == "extract_user_data":
-                    result = await self._handle_extract_user_data(function_args)
-                    logger.info(f"✅ Function result: {result[:50]}...")
-                    return result
-                elif function_name == "check_budget":
-                    result = await self._handle_check_budget(function_args)
-                    logger.info(f"✅ Function result: {result[:50]}...")
-                    return result
-                elif function_name == "show_calendar_options":
-                    result = await self._handle_show_calendar_options(function_args)
-                    logger.info(f"✅ Function result: {result[:50]}...")
-                    return result
-                elif function_name == "schedule_meeting":
-                    result = await self._handle_schedule_meeting(function_args)
-                    logger.info(f"✅ Function result: {result[:50]}...")
-                    return result
+                # Ejecutar función y actualizar estado
+                function_result = await self._execute_function_with_state_update(function_name, function_args)
+                
+                # CRITICAL: Generar respuesta final con contexto actualizado
+                return await self._generate_response_after_function(function_name, function_args, function_result)
             
             # Si no hay function call, devolver respuesta normal
             ai_response = response_message.content.strip()
@@ -301,7 +211,8 @@ RESPONDE DE FORMA NATURAL Y PROGRESIVA AL SIGUIENTE MENSAJE:"""
             
         except Exception as e:
             logger.error(f"❌ OpenAI error: {e}")
-            return self._generate_fallback_response(message)
+            # FALLBACK: Solo en caso de error completo de OpenAI
+            return "Disculpa, hubo un problema técnico. ¿Podrías repetir tu mensaje?"
     
     def _build_conversation_context(self) -> str:
         """Construir contexto de la conversación"""
@@ -366,6 +277,136 @@ RESPONDE DE FORMA NATURAL Y PROGRESIVA AL SIGUIENTE MENSAJE:"""
             memory += " | PROGRESO: " + ", ".join(progress_info)
         
         return memory
+    
+    def _build_conversation_messages(self, current_message: str) -> list:
+        """BEST PRACTICE: Construir mensajes de conversación con contexto completo"""
+        messages = []
+        
+        # System prompt con estado actual
+        system_prompt = self._build_dynamic_system_prompt()
+        messages.append({"role": "system", "content": system_prompt})
+        
+        # CRITICAL: Agregar conversación previa para mantener contexto
+        for log in self.conversation_log[-6:]:  # Últimos 6 mensajes para contexto
+            if log.get('type') == 'user_message':
+                messages.append({"role": "user", "content": log['content']})
+            elif log.get('type') == 'assistant_message':
+                messages.append({"role": "assistant", "content": log['content']})
+        
+        # Mensaje actual
+        messages.append({"role": "user", "content": current_message})
+        
+        logger.info(f"📝 CONVERSATION CONTEXT: {len(messages)} mensajes en historial")
+        return messages
+    
+    def _build_dynamic_system_prompt(self) -> str:
+        """Construir system prompt dinámico basado en estado actual"""
+        # Estado de progreso para evitar repeticiones
+        progress_status = []
+        if self.collected_data.get('service_interest'):
+            progress_status.append(f"REQUERIMIENTO YA CAPTURADO: {self.collected_data['service_interest']}")
+        if self.collected_data.get('budget_confirmed'):
+            progress_status.append("PRESUPUESTO YA CONFIRMADO")
+        if self.collected_data.get('email'):
+            progress_status.append(f"EMAIL YA CAPTURADO: {self.collected_data['email']}")
+        if self.collected_data.get('phone'):
+            progress_status.append(f"TELÉFONO YA CAPTURADO: {self.collected_data['phone']}")
+        
+        # Determinar siguiente paso del flujo
+        next_step = self._determine_next_conversation_step()
+        
+        system_prompt = f"""Eres Mati, asistente de TDX. CRITICAL: Esta es una conversación CONTINUA, NO inicial.
+
+DATOS YA CAPTURADOS:
+{'; '.join(progress_status) if progress_status else 'Ningún dato capturado aún'}
+
+SIGUIENTE PASO REQUERIDO:
+{next_step}
+
+REGLAS ANTI-REPETICIÓN:
+- NUNCA saludes si ya hay conversación previa
+- NUNCA preguntes datos ya capturados arriba
+- CONTINÚA desde donde se quedó la conversación
+- NO reinicies el flujo
+
+PERSONALIDAD: Empático, natural, directo. Máximo 1 emoji por mensaje."""
+        
+        return system_prompt
+    
+    def _determine_next_conversation_step(self) -> str:
+        """Determinar el siguiente paso lógico del flujo"""
+        if not self.collected_data.get('service_interest'):
+            return "CAPTURAR: Requerimiento específico de IA (chatbot, automatización, etc.)"
+        elif not self.collected_data.get('budget_confirmed'):
+            return "CONFIRMAR: Presupuesto disponible (2K-20K USD)"
+        elif not self.collected_data.get('email'):
+            return "SOLICITAR: Email del cliente"
+        elif not self.collected_data.get('phone'):
+            return "SOLICITAR: Número de teléfono"
+        elif not self.collected_data.get('calendar_options_shown'):
+            return "MOSTRAR: Opciones de calendario para reunión"
+        elif not self.collected_data.get('meeting_confirmed'):
+            return "CONFIRMAR: Selección de horario"
+        else:
+            return "FLUJO COMPLETADO: Reunión agendada"
+    
+    async def _execute_function_with_state_update(self, function_name: str, function_args: Dict) -> str:
+        """BEST PRACTICE: Ejecutar función y actualizar estado inmediatamente"""
+        try:
+            if function_name == "extract_user_data":
+                return await self._handle_extract_user_data(function_args)
+            elif function_name == "check_budget":
+                return await self._handle_check_budget(function_args)
+            elif function_name == "show_calendar_options":
+                return await self._handle_show_calendar_options(function_args)
+            elif function_name == "schedule_meeting":
+                return await self._handle_schedule_meeting(function_args)
+            else:
+                logger.error(f"Función desconocida: {function_name}")
+                return "Error: Función no reconocida"
+        except Exception as e:
+            logger.error(f"Error ejecutando función {function_name}: {e}")
+            return f"Error ejecutando {function_name}"
+    
+    async def _generate_response_after_function(self, function_name: str, function_args: Dict, function_result: str) -> str:
+        """BEST PRACTICE: Generar respuesta contextual después de function calling"""
+        try:
+            # Si la función ya retornó una respuesta completa, usarla
+            if function_result and len(function_result.strip()) > 10:
+                return function_result
+            
+            # Si no, generar respuesta dinámica con estado actualizado
+            context = f"Función ejecutada: {function_name}. Estado actual: {self._get_current_state_summary()}"
+            
+            response = self.openai_client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": f"Eres Mati de TDX. Genera una respuesta natural después de ejecutar {function_name}. {context}"},
+                    {"role": "user", "content": "Genera la respuesta apropiada para continuar la conversación"}
+                ],
+                max_tokens=100,
+                temperature=0.7
+            )
+            
+            return response.choices[0].message.content.strip()
+            
+        except Exception as e:
+            logger.error(f"Error generando respuesta post-función: {e}")
+            return function_result if function_result else "Continuemos con el proceso."
+    
+    def _get_current_state_summary(self) -> str:
+        """Resumen del estado actual para contexto"""
+        summary = []
+        if self.collected_data.get('service_interest'):
+            summary.append(f"servicio={self.collected_data['service_interest']}")
+        if self.collected_data.get('budget_confirmed'):
+            summary.append("presupuesto=confirmado")
+        if self.collected_data.get('email'):
+            summary.append("email=capturado")
+        if self.collected_data.get('phone'):
+            summary.append("teléfono=capturado")
+        
+        return "; ".join(summary) if summary else "sin datos"
     
     async def _handle_extract_user_data(self, function_args: Dict) -> str:
         """Manejar extracción de datos del usuario"""
