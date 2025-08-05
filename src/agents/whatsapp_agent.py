@@ -124,6 +124,13 @@ class TDXWhatsAppAgentClean:
             # Construir contexto de conversación
             conversation_context = self._build_conversation_context()
             
+            # DEBUG: Log del estado actual para verificar persistencia
+            logger.info(f"🔍 DEBUG ESTADO - Conv: {self.conversation_id}")
+            logger.info(f"🔍 DEBUG ESTADO - Mensajes en log: {len(self.conversation_log)}")
+            logger.info(f"🔍 DEBUG ESTADO - Email: {self.collected_data.get('email')}")
+            logger.info(f"🔍 DEBUG ESTADO - Servicio: {self.collected_data.get('service_interest')}")
+            logger.info(f"🔍 DEBUG ESTADO - Presupuesto: {self.collected_data.get('budget_confirmed')}")
+            
             # Definir funciones disponibles para OpenAI
             functions = [
                 {
@@ -190,6 +197,9 @@ INFORMACIÓN ACTUAL DEL CLIENTE:
 - Requerimiento: {self.collected_data.get('service_interest', 'No definido')}
 - Presupuesto confirmado: {self.collected_data.get('budget_confirmed', False)}
 
+MEMORIA DE CONVERSACIÓN PREVIA:
+{self._get_conversation_memory()}
+
 CONTEXTO DE CONVERSACIÓN:
 {conversation_context}
 
@@ -223,14 +233,15 @@ USAR HERRAMIENTAS DE FORMA INTELIGENTE:
 - USA schedule_meeting cuando:
   * Usuario responda "1", "2", o "3"
 
-REGLAS DE COMUNICACIÓN:
-1. Frases cortas pero naturales y empáticas
-2. SIEMPRE saluda cordialmente en primer contacto
-3. No repitas respuestas idénticas
-4. Si dicen algo no relacionado a IA, redirige suavemente
+REGLAS DE COMUNICACIÓN CRÍTICAS:
+1. NUNCA repitas saludos si ya hay conversación previa
+2. USA la memoria de conversación - NO vuelvas a preguntar datos ya capturados
+3. Si el usuario ya dijo algo, CONTINÚA desde ahí - NO reinicies
+4. Frases cortas pero naturales y empáticas
 5. Máximo 1 emoji por mensaje
 6. PROGRESA en el flujo, no te quedes en loops
 7. Haz UNA pregunta por vez
+8. Si dicen algo no relacionado a IA, redirige suavemente
 
 EJEMPLOS DE CONVERSACIÓN NATURAL:
 - "¡Hola! Soy Mati de TDX 😊 ¿Cómo estás hoy?"
@@ -324,6 +335,37 @@ RESPONDE DE FORMA NATURAL Y PROGRESIVA AL SIGUIENTE MENSAJE:"""
             context_parts.append(f"Últimos mensajes: {'; '.join(recent_messages)}")
         
         return "; ".join(context_parts) if context_parts else "Inicio de conversación"
+    
+    def _get_conversation_memory(self) -> str:
+        """Obtener memoria de conversación para OpenAI"""
+        if not self.conversation_log:
+            return "Primera interacción con el cliente"
+        
+        # Obtener últimos 4 mensajes para contexto
+        recent_conversation = []
+        for log in self.conversation_log[-4:]:
+            if log.get('type') == 'user_message':
+                recent_conversation.append(f"Usuario: {log['content']}")
+            elif log.get('type') == 'assistant_message':
+                recent_conversation.append(f"Mati: {log['content']}")
+        
+        memory = "; ".join(recent_conversation) if recent_conversation else "No hay conversación previa"
+        
+        # Agregar contexto de progreso
+        progress_info = []
+        if self.collected_data.get('service_interest'):
+            progress_info.append(f"YA CAPTURÉ: Requerimiento ({self.collected_data['service_interest']})")
+        if self.collected_data.get('budget_confirmed'):
+            progress_info.append("YA CAPTURÉ: Presupuesto confirmado")
+        if self.collected_data.get('email'):
+            progress_info.append(f"YA CAPTURÉ: Email ({self.collected_data['email']})")
+        if self.collected_data.get('phone'):
+            progress_info.append(f"YA CAPTURÉ: Teléfono ({self.collected_data['phone']})")
+        
+        if progress_info:
+            memory += " | PROGRESO: " + ", ".join(progress_info)
+        
+        return memory
     
     async def _handle_extract_user_data(self, function_args: Dict) -> str:
         """Manejar extracción de datos del usuario"""
