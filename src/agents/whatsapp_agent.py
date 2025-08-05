@@ -333,10 +333,23 @@ ESTADO DE PRESUPUESTO:
 SIGUIENTE PASO REQUERIDO:
 {next_step}
 
-REGLAS ANTI-REPETICIÓN CRÍTICAS:
+REGLAS CRÍTICAS DE FLUJO:
+- DETECTAR REQUERIMIENTO: Si usuario menciona cualquiera de estas palabras: "servicios de ai", "servicios de ia", "chatbot", "bot", "ia", "automatizar", "automatización", "soluciones", "proyecto" -> INMEDIATAMENTE usar extract_user_data para capturar service_interest
+- PREGUNTA DE PRESUPUESTO: Cuando captures service_interest y NO tengas presupuesto confirmado -> PREGUNTAR EXACTAMENTE:
+  "¿Tienes disponible el presupuesto de 2.000 USD a 20.000 USD para este proyecto?
+
+  1️⃣ Sí, tengo el presupuesto
+  2️⃣ Sí, pero para hacer pagos en partes  
+  3️⃣ No, pero me interesa escuchar la oferta
+
+  Solo responde con el número de tu opción."
+- PROCESAR OPCIONES: Si usuario responde "1", "2", o "3" -> USAR extract_user_data con budget_option_selected
+- FLUJO CONTINUO: TODAS las opciones de presupuesto (1, 2, 3) continúan el flujo hacia la reunión
+- PROHIBIDO: NUNCA termines conversación por presupuesto, NUNCA preguntes presupuesto genérico
+
+REGLAS ANTI-REPETICIÓN:
 - NUNCA saludes si ya hay conversación previa
 - NUNCA preguntes datos ya capturados arriba
-- TODAS las opciones de presupuesto (1, 2, 3) continúan el flujo hacia la reunión
 - CONTINÚA desde donde se quedó la conversación
 - NO reinicies el flujo ni hagas preguntas repetidas
 
