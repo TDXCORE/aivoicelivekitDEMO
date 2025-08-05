@@ -34,10 +34,12 @@ class TDXWhatsAppAgentClean:
             'company': company_name,
             'service_interest': None,
             'budget_confirmed': False,
+            'budget_declined': False,
             'budget_range': None,
             'calendar_options_shown': False,
             'selected_time_slot': None,
-            'meeting_confirmed': False
+            'meeting_confirmed': False,
+            'conversation_ended': False
         }
         
         # Configuración APIs
@@ -132,7 +134,7 @@ class TDXWhatsAppAgentClean:
             functions = [
                 {
                     "name": "extract_user_data",
-                    "description": "Extraer y actualizar datos del usuario (nombre, email, teléfono, empresa, servicio)",
+                    "description": "Extraer y actualizar datos del usuario SOLO cuando detectes nueva información",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -140,24 +142,16 @@ class TDXWhatsAppAgentClean:
                             "email": {"type": "string", "description": "Email del usuario"},
                             "phone": {"type": "string", "description": "Teléfono del usuario"},
                             "company": {"type": "string", "description": "Empresa del usuario"},
-                            "service_interest": {"type": "string", "description": "Servicio de interés específico (chatbot, automatización, web, etc.)"},
-                            "budget_range": {"type": "string", "description": "Rango de presupuesto confirmado"}
-                        }
-                    }
-                },
-                {
-                    "name": "check_budget",
-                    "description": "Preguntar sobre presupuesto cuando se entiende el requerimiento",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "requirement_understood": {"type": "boolean", "description": "Si se entendió el requerimiento del cliente"}
+                            "service_interest": {"type": "string", "description": "Servicio de interés específico"},
+                            "budget_confirmed": {"type": "boolean", "description": "Si confirmó que SÍ tiene presupuesto"},
+                            "budget_declined": {"type": "boolean", "description": "Si confirmó que NO tiene presupuesto"},
+                            "budget_range": {"type": "string", "description": "Rango específico si lo menciona"}
                         }
                     }
                 },
                 {
                     "name": "show_calendar_options",
-                    "description": "Mostrar opciones de calendario cuando se tienen todos los datos necesarios",
+                    "description": "SOLO usar cuando tiene: servicio + presupuesto confirmado + email + teléfono",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -167,11 +161,21 @@ class TDXWhatsAppAgentClean:
                 },
                 {
                     "name": "schedule_meeting",
-                    "description": "Agendar reunión real cuando el usuario selecciona un horario",
+                    "description": "Agendar reunión cuando usuario selecciona opción 1, 2, o 3",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "option_selected": {"type": "string", "description": "Opción seleccionada (1, 2, o 3)"}
+                        }
+                    }
+                },
+                {
+                    "name": "end_conversation_no_budget",
+                    "description": "USAR cuando cliente confirma que NO tiene presupuesto para terminar conversación elegantemente",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "reason": {"type": "string", "description": "Razón por la que no tiene presupuesto"}
                         }
                     }
                 }
@@ -315,19 +319,32 @@ class TDXWhatsAppAgentClean:
         # Determinar siguiente paso del flujo
         next_step = self._determine_next_conversation_step()
         
+        # Estado de presupuesto para evitar bucles
+        budget_status = ""
+        if self.collected_data.get('budget_confirmed'):
+            budget_status = "PRESUPUESTO: ✅ CONFIRMADO"
+        elif self.collected_data.get('budget_declined'):
+            budget_status = "PRESUPUESTO: ❌ DECLINADO - NO preguntar más sobre presupuesto"
+        else:
+            budget_status = "PRESUPUESTO: Pendiente de confirmar"
+        
         system_prompt = f"""Eres Mati, asistente de TDX. CRITICAL: Esta es una conversación CONTINUA, NO inicial.
 
 DATOS YA CAPTURADOS:
 {'; '.join(progress_status) if progress_status else 'Ningún dato capturado aún'}
 
+ESTADO DE PRESUPUESTO:
+{budget_status}
+
 SIGUIENTE PASO REQUERIDO:
 {next_step}
 
-REGLAS ANTI-REPETICIÓN:
+REGLAS ANTI-REPETICIÓN CRÍTICAS:
 - NUNCA saludes si ya hay conversación previa
 - NUNCA preguntes datos ya capturados arriba
+- Si presupuesto fue DECLINADO, usa función end_conversation_no_budget
 - CONTINÚA desde donde se quedó la conversación
-- NO reinicies el flujo
+- NO reinicies el flujo ni hagas preguntas repetidas
 
 PERSONALIDAD: Empático, natural, directo. Máximo 1 emoji por mensaje."""
         
@@ -335,10 +352,19 @@ PERSONALIDAD: Empático, natural, directo. Máximo 1 emoji por mensaje."""
     
     def _determine_next_conversation_step(self) -> str:
         """Determinar el siguiente paso lógico del flujo"""
+        # Si conversación ya terminó, no hacer nada más
+        if self.collected_data.get('conversation_ended'):
+            return "CONVERSACIÓN TERMINADA - Ser cordial pero no continuar flujo"
+        
+        # Si presupuesto fue declinado, terminar conversación
+        if self.collected_data.get('budget_declined'):
+            return "TERMINAR: Usar función end_conversation_no_budget"
+        
+        # Flujo normal
         if not self.collected_data.get('service_interest'):
-            return "CAPTURAR: Requerimiento específico de IA (chatbot, automatización, etc.)"
-        elif not self.collected_data.get('budget_confirmed'):
-            return "CONFIRMAR: Presupuesto disponible (2K-20K USD)"
+            return "CAPTURAR: Requerimiento específico de IA"
+        elif not self.collected_data.get('budget_confirmed') and not self.collected_data.get('budget_declined'):
+            return "PREGUNTAR: ¿Tienes presupuesto para este proyecto?"
         elif not self.collected_data.get('email'):
             return "SOLICITAR: Email del cliente"
         elif not self.collected_data.get('phone'):
@@ -355,12 +381,12 @@ PERSONALIDAD: Empático, natural, directo. Máximo 1 emoji por mensaje."""
         try:
             if function_name == "extract_user_data":
                 return await self._handle_extract_user_data(function_args)
-            elif function_name == "check_budget":
-                return await self._handle_check_budget(function_args)
             elif function_name == "show_calendar_options":
                 return await self._handle_show_calendar_options(function_args)
             elif function_name == "schedule_meeting":
                 return await self._handle_schedule_meeting(function_args)
+            elif function_name == "end_conversation_no_budget":
+                return await self._handle_end_conversation_no_budget(function_args)
             else:
                 logger.error(f"Función desconocida: {function_name}")
                 return "Error: Función no reconocida"
@@ -422,6 +448,10 @@ PERSONALIDAD: Empático, natural, directo. Máximo 1 emoji por mensaje."""
                             self.contact_name = value
                         elif key == 'company':
                             self.company_name = value
+                        elif key == 'budget_confirmed' and value:
+                            self.collected_data['budget_confirmed'] = True
+                        elif key == 'budget_declined' and value:
+                            self.collected_data['budget_declined'] = True
                         elif key == 'budget_range':
                             self.collected_data['budget_confirmed'] = True
                         logger.info(f"✅ DATO ACTUALIZADO: {key} = {value}")
@@ -471,23 +501,23 @@ PERSONALIDAD: Empático, natural, directo. Máximo 1 emoji por mensaje."""
             logger.error(f"Error handling extract_user_data: {e}")
             return "Entendido, sigamos con el proceso."
     
-    async def _handle_check_budget(self, function_args: Dict) -> str:
-        """Manejar confirmación de presupuesto"""
+    async def _handle_end_conversation_no_budget(self, function_args: Dict) -> str:
+        """Manejar final de conversación cuando no hay presupuesto"""
         try:
-            # Solo preguntar presupuesto si ya entendimos el requerimiento
-            if not self.collected_data['service_interest']:
-                return "Primero, ¿qué necesitas específicamente?"
+            reason = function_args.get('reason', 'sin presupuesto disponible')
             
-            # Si ya confirmamos presupuesto, continuar
-            if self.collected_data['budget_confirmed']:
-                return "¡Perfecto! Tu presupuesto está confirmado."
+            # Marcar conversación como terminada
+            self.collected_data['conversation_ended'] = True
+            self.collected_data['budget_declined'] = True
             
-            # Preguntar presupuesto de forma directa
-            return "¿Tienes presupuesto entre 2K-20K USD? 💰"
+            logger.info(f"🔚 CONVERSACIÓN TERMINADA: {reason}")
+            
+            # Respuesta empática pero que cierra el flujo
+            return f"Entiendo perfectamente, {self.collected_data['name']}. No hay problema en absoluto. Cuando tengas presupuesto disponible para tu proyecto de {self.collected_data.get('service_interest', 'IA')}, estaremos aquí para ayudarte. ¡Que tengas un excelente día! 😊"
             
         except Exception as e:
-            logger.error(f"Error handling check_budget: {e}")
-            return "¿Cuál es tu presupuesto aproximado?"
+            logger.error(f"Error handling end_conversation_no_budget: {e}")
+            return "Entiendo. Cuando tengas presupuesto disponible, estaremos aquí para ayudarte. ¡Gracias por contactarnos!"
     
     async def _handle_show_calendar_options(self, function_args: Dict) -> str:
         """Mostrar opciones de calendario disponibles"""
