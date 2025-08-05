@@ -262,6 +262,141 @@ class MicrosoftGraphClient:
         
         return available_slots
     
+    async def create_meeting_with_summary(self, attendee_email: str, meeting_date: str, meeting_time: str, 
+                           contact_name: str, company_name: str, meeting_type: str = "discovery_call",
+                           requirement: str = None, budget_range: str = None, phone: str = None) -> Dict[str, Any]:
+        """Create a Teams meeting with detailed summary in the invitation"""
+        
+        if not self.client:
+            logger.warning("Microsoft Graph client not available - using mock data")
+            return self._create_mock_meeting(attendee_email, meeting_date, meeting_time, contact_name)
+        
+        try:
+            # Parse date and time - handle both 24-hour and 12-hour formats
+            try:
+                # Try 12-hour format first (e.g., "3:00 PM")
+                meeting_datetime = datetime.strptime(f"{meeting_date} {meeting_time}", "%Y-%m-%d %I:%M %p")
+            except ValueError:
+                # Fallback to 24-hour format (e.g., "15:00")
+                meeting_datetime = datetime.strptime(f"{meeting_date} {meeting_time}", "%Y-%m-%d %H:%M")
+            end_datetime = meeting_datetime + timedelta(minutes=30)
+            
+            # NUEVO: Crear evento con resumen detallado en el cuerpo
+            from msgraph.generated.models.event import Event
+            from msgraph.generated.models.item_body import ItemBody
+            from msgraph.generated.models.body_type import BodyType
+            from msgraph.generated.models.date_time_time_zone import DateTimeTimeZone
+            from msgraph.generated.models.attendee import Attendee
+            from msgraph.generated.models.email_address import EmailAddress
+            from msgraph.generated.models.attendee_type import AttendeeType
+            from msgraph.generated.models.online_meeting_provider_type import OnlineMeetingProviderType
+            
+            event = Event()
+            event.subject = f"TDX Discovery Call - {contact_name}"
+            event.body = ItemBody()
+            event.body.content_type = BodyType.Html
+            
+            # NUEVO: Cuerpo de invitación con resumen detallado
+            event.body.content = f"""
+            <h3>🚀 Reunión de Descubrimiento TDX</h3>
+            <p><strong>Agendado automáticamente por Mati (Asistente Virtual TDX)</strong></p>
+            <br>
+            
+            <h4>📋 RESUMEN DEL CLIENTE:</h4>
+            <ul>
+                <li><strong>Nombre:</strong> {contact_name}</li>
+                <li><strong>Email:</strong> {attendee_email}</li>
+                <li><strong>Empresa:</strong> {company_name or 'No especificada'}</li>
+                <li><strong>Teléfono:</strong> {phone or 'No proporcionado'}</li>
+                <li><strong>Requerimiento:</strong> {requirement or 'No especificado'}</li>
+                <li><strong>Presupuesto:</strong> {budget_range or 'Por confirmar'}</li>
+            </ul>
+            
+            <br>
+            <h4>🎯 OBJETIVO DE LA REUNIÓN:</h4>
+            <p>Entender las necesidades específicas del cliente y presentar cómo TDX puede ayudar con soluciones de IA empresarial.</p>
+            
+            <br>
+            <h4>📞 INFORMACIÓN ADICIONAL:</h4>
+            <p>Esta reunión fue agendada automáticamente a través de nuestro asistente virtual. El cliente ya confirmó interés y presupuesto.</p>
+            
+            <br>
+            <p><em>⚡ Generado automáticamente por TDX AI System</em></p>
+            """
+            
+            # Set date and time con timezone
+            event.start = DateTimeTimeZone()
+            event.start.date_time = meeting_datetime.isoformat()
+            event.start.time_zone = "America/Bogota"  # Colombia timezone
+            
+            event.end = DateTimeTimeZone()
+            event.end.date_time = end_datetime.isoformat()
+            event.end.time_zone = "America/Bogota"
+            
+            # Add attendees (cliente + CC automática)
+            attendees = []
+            
+            # Cliente principal
+            attendee = Attendee()
+            attendee.email_address = EmailAddress()
+            attendee.email_address.address = attendee_email
+            attendee.email_address.name = contact_name
+            attendee.type = AttendeeType.Required
+            attendees.append(attendee)
+            
+            # CC AUTOMÁTICA INTERNA (NO INFORMAR AL CLIENTE)
+            # Freddy Rincones
+            cc_freddy = Attendee()
+            cc_freddy.email_address = EmailAddress()
+            cc_freddy.email_address.address = "freddy.rincones@tdxcore.com"
+            cc_freddy.email_address.name = "Freddy Rincones"
+            cc_freddy.type = AttendeeType.Optional
+            attendees.append(cc_freddy)
+            
+            # Emma Castillo
+            cc_emma = Attendee()
+            cc_emma.email_address = EmailAddress()
+            cc_emma.email_address.address = "emma.castillo@tdxcore.com"
+            cc_emma.email_address.name = "Emma Castillo"
+            cc_emma.type = AttendeeType.Optional
+            attendees.append(cc_emma)
+            
+            event.attendees = attendees
+            
+            # CLAVE: Enable Teams meeting automáticamente
+            event.is_online_meeting = True
+            event.online_meeting_provider = OnlineMeetingProviderType.TeamsForBusiness
+            
+            # OPTIMIZED: Fast timeout for <800ms latency
+            user_email = os.getenv('USER_EMAIL', 'ventas@tdxcore.com')
+            created_event = await asyncio.wait_for(
+                self.client.users.by_user_id(user_email).calendar.events.post(event),
+                timeout=2.0  # OPTIMIZED: 2 second timeout (was 10s)
+            )
+            
+            logger.info(f"✅ REAL Teams meeting with detailed summary created for {attendee_email}")
+            
+            return {
+                "meeting_scheduled": True,
+                "meeting_id": created_event.id,
+                "attendee_email": attendee_email,
+                "meeting_date": meeting_datetime.strftime("%A, %B %d, %Y"),
+                "meeting_time": meeting_time,
+                "meeting_type": meeting_type,
+                "meeting_link": created_event.online_meeting.join_url if created_event.online_meeting else f"https://teams.microsoft.com/l/meetup-join/{created_event.id}",
+                "calendar_invite_sent": True,
+                "confirmation_sent": True,
+                "real_api_used": True,  # INDICADOR de que se usó API real
+                "summary_included": True  # NUEVO: Indicador de resumen incluido
+            }
+            
+        except asyncio.TimeoutError:
+            logger.error("Microsoft Graph API timeout - falling back to mock")
+            return self._create_mock_meeting(attendee_email, meeting_date, meeting_time, contact_name)
+        except Exception as e:
+            logger.error(f"Error creating REAL meeting with summary: {e}")
+            return self._create_mock_meeting(attendee_email, meeting_date, meeting_time, contact_name)
+
     async def create_meeting(self, attendee_email: str, meeting_date: str, meeting_time: str, 
                            contact_name: str, company_name: str, meeting_type: str = "discovery_call") -> Dict[str, Any]:
         """Create a Teams meeting with the specified details using REAL Microsoft Graph API"""

@@ -33,6 +33,8 @@ class TDXWhatsAppAgentClean:
             'phone': None,
             'company': company_name,
             'service_interest': None,
+            'budget_confirmed': False,
+            'budget_range': None,
             'calendar_options_shown': False,
             'selected_time_slot': None,
             'meeting_confirmed': False
@@ -80,14 +82,18 @@ class TDXWhatsAppAgentClean:
                     'content': response
                 })
                 
-                # Enviar por Chatwoot
-                success = await self._send_to_chatwoot(response)
-                
-                if success:
-                    logger.info(f"✅ Response sent successfully to {self.contact_name}")
-                    return response
+                # Enviar por Chatwoot (si está configurado)
+                if self.chatwoot_account_id and self.chatwoot_api_token:
+                    success = await self._send_to_chatwoot(response)
+                    if success:
+                        logger.info(f"✅ Response sent successfully to {self.contact_name}")
+                    else:
+                        logger.error(f"❌ Failed to send response to {self.contact_name}")
                 else:
-                    logger.error(f"❌ Failed to send response to {self.contact_name}")
+                    # Modo test/desarrollo - solo retornar respuesta sin enviar
+                    logger.info(f"📝 Test mode - response: {response}")
+                
+                return response
             
             return None
             
@@ -117,7 +123,18 @@ class TDXWhatsAppAgentClean:
                             "email": {"type": "string", "description": "Email del usuario"},
                             "phone": {"type": "string", "description": "Teléfono del usuario"},
                             "company": {"type": "string", "description": "Empresa del usuario"},
-                            "service_interest": {"type": "string", "description": "Servicio de interés (finanzas, automatización, chatbots, etc.)"}
+                            "service_interest": {"type": "string", "description": "Servicio de interés específico (chatbot, automatización, web, etc.)"},
+                            "budget_range": {"type": "string", "description": "Rango de presupuesto confirmado"}
+                        }
+                    }
+                },
+                {
+                    "name": "check_budget",
+                    "description": "Preguntar sobre presupuesto cuando se entiende el requerimiento",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "requirement_understood": {"type": "boolean", "description": "Si se entendió el requerimiento del cliente"}
                         }
                     }
                 },
@@ -144,49 +161,46 @@ class TDXWhatsAppAgentClean:
             ]
             
             # Prompt maestro que gobierna todo el comportamiento
-            system_prompt = f"""Eres Mati, asistente virtual experto de TDX, empresa líder en soluciones de IA empresarial.
+            system_prompt = f"""Eres Mati, asistente virtual experto de TDX. Sé DIRECTO, EMPÁTICO y usa MÁXIMO 6-10 PALABRAS POR FRASE.
 
 INFORMACIÓN DEL CLIENTE:
 - Nombre: {self.contact_name}
 - Empresa: {self.company_name}
-- Email: {self.collected_data.get('email', 'No proporcionado')}
-- Teléfono: {self.collected_data.get('phone', 'No proporcionado')}
-- Servicio de interés: {self.collected_data.get('service_interest', 'No definido')}
+- Email: {self.collected_data.get('email', 'Pendiente')}
+- Teléfono: {self.collected_data.get('phone', 'Pendiente')}
+- Requerimiento: {self.collected_data.get('service_interest', 'Pendiente')}
+- Presupuesto: {self.collected_data.get('budget_range', 'Pendiente')}
 
 CONTEXTO ACTUAL:
 {conversation_context}
 
-OBJETIVO PRINCIPAL:
-Agendar una reunión de descubrimiento para mostrar cómo TDX puede ayudar con IA empresarial.
+FLUJO OBLIGATORIO (NO SALTEAR PASOS):
+1. ENTENDER REQUERIMIENTO específico del cliente
+2. CONFIRMAR PRESUPUESTO (2.000-20.000 USD)
+3. SOLICITAR datos (nombre, email, teléfono)
+4. AGENDAR reunión de descubrimiento
 
-FLUJO DE CONVERSACIÓN:
-1. Saludar y detectar interés en servicios de IA
-2. Identificar área específica (finanzas, automatización, chatbots, etc.)
-3. Recopilar datos necesarios: nombre, email, teléfono
-4. Mostrar opciones de calendario cuando tengas todos los datos
-5. Agendar reunión real cuando seleccionen horario
+HERRAMIENTAS:
+- extract_user_data: Datos del usuario
+- check_budget: Preguntar presupuesto
+- show_calendar_options: Mostrar horarios
+- schedule_meeting: Agendar reunión
 
-HERRAMIENTAS DISPONIBLES:
-- extract_user_data: Usar cuando detectes datos del usuario en el mensaje
-- show_calendar_options: Usar cuando tengas email, teléfono y nombre completos
-- schedule_meeting: Usar cuando el usuario seleccione horario (1, 2, o 3)
+REGLAS ESTRICTAS:
+1. MÁXIMO 6-10 PALABRAS POR FRASE
+2. SÉ DIRECTO Y EMPÁTICO
+3. NO saltes el tema presupuesto
+4. NO agendas sin confirmar presupuesto
+5. Un emoji máximo por mensaje
+6. SIEMPRE avanza en el flujo
 
-REGLAS DE COMPORTAMIENTO:
-1. Mantén conversación natural y profesional
-2. Usa máximo 2 emojis por mensaje
-3. Respuestas concisas (1-3 líneas máximo)
-4. Siempre busca avanzar hacia el agendamiento
-5. Si detectas datos del usuario, llama extract_user_data inmediatamente
-6. Si tienes todos los datos, llama show_calendar_options automáticamente
-7. Si el usuario dice "1", "2" o "3", llama schedule_meeting inmediatamente
+EJEMPLOS DE RESPUESTAS:
+- "¿Qué necesitas específicamente?"
+- "¿Tienes presupuesto de 2K-20K USD?"
+- "Perfecto. ¿Tu email?"
+- "¡Listo! ¿Mañana 10am?"
 
-SERVICIOS TDX:
-- Chatbots con IA: Automatización de atención al cliente
-- Automatización de procesos: IA para finanzas, operaciones
-- Desarrollo web: Páginas con IA integrada
-- Asistentes de voz: IA conversacional avanzada
-
-Responde al siguiente mensaje del cliente de manera natural y efectiva:"""
+Responde siguiendo estas reglas:"""
 
             # Preparar mensajes para OpenAI
             messages = [
@@ -216,6 +230,8 @@ Responde al siguiente mensaje del cliente de manera natural y efectiva:"""
                 # Ejecutar la función correspondiente
                 if function_name == "extract_user_data":
                     return await self._handle_extract_user_data(function_args)
+                elif function_name == "check_budget":
+                    return await self._handle_check_budget(function_args)
                 elif function_name == "show_calendar_options":
                     return await self._handle_show_calendar_options(function_args)
                 elif function_name == "schedule_meeting":
@@ -240,13 +256,21 @@ Responde al siguiente mensaje del cliente de manera natural y efectiva:"""
         if self.collected_data['phone']:
             context_parts.append(f"Teléfono: {self.collected_data['phone']}")
         if self.collected_data['service_interest']:
-            context_parts.append(f"Servicio: {self.collected_data['service_interest']}")
+            context_parts.append(f"Requerimiento: {self.collected_data['service_interest']}")
+        if self.collected_data['budget_confirmed']:
+            context_parts.append(f"Presupuesto confirmado: {self.collected_data['budget_range']}")
         
         # Estado del flujo
-        if self.collected_data['calendar_options_shown']:
-            context_parts.append("Opciones de calendario ya mostradas")
-        if self.collected_data['meeting_confirmed']:
-            context_parts.append("Reunión confirmada")
+        if not self.collected_data['service_interest']:
+            context_parts.append("PASO 1: Entender requerimiento específico")
+        elif not self.collected_data['budget_confirmed']:
+            context_parts.append("PASO 2: Confirmar presupuesto 2K-20K USD")
+        elif not all([self.collected_data['email'], self.collected_data['phone']]):
+            context_parts.append("PASO 3: Solicitar datos de contacto")
+        elif self.collected_data['calendar_options_shown']:
+            context_parts.append("PASO 4: Esperando selección de horario")
+        elif self.collected_data['meeting_confirmed']:
+            context_parts.append("FLUJO COMPLETO: Reunión confirmada")
         
         # Últimos mensajes para contexto
         recent_messages = [log['content'] for log in self.conversation_log[-2:] if log.get('type') == 'user_message']
@@ -266,55 +290,82 @@ Responde al siguiente mensaje del cliente de manera natural y efectiva:"""
                         self.contact_name = value
                     elif key == 'company':
                         self.company_name = value
+                    elif key == 'budget_range':
+                        self.collected_data['budget_confirmed'] = True
                     logger.info(f"Dato actualizado: {key} = {value}")
             
-            # Verificar si tenemos todos los datos necesarios
-            has_all_data = bool(
-                self.collected_data['email'] and
-                self.collected_data['phone'] and
-                self.collected_data['name']
-            )
+            # FLUJO MEJORADO: Verificar pasos en orden
             
-            # Si tenemos todos los datos, mostrar opciones de calendario automáticamente
-            if has_all_data and not self.collected_data['calendar_options_shown']:
-                service_type = self.collected_data.get('service_interest', 'IA empresarial')
-                return await self._handle_show_calendar_options({'service_type': service_type})
+            # 1. Si no hay requerimiento específico
+            if not self.collected_data['service_interest']:
+                return "¿Qué necesitas específicamente?"
             
-            # Si falta algo, pedir lo que falta
+            # 2. Si no hay presupuesto confirmado
+            if not self.collected_data['budget_confirmed']:
+                return "¿Tienes presupuesto 2K-20K USD?"
+            
+            # 3. Si faltan datos de contacto
             missing = []
             if not self.collected_data['email']:
                 missing.append("email")
             if not self.collected_data['phone']:
                 missing.append("teléfono")
-            if not self.collected_data['name']:
-                missing.append("nombre")
             
             if missing:
-                missing_str = " y ".join(missing)
-                return f"Perfecto! Solo necesito tu {missing_str} para completar el agendamiento."
+                if len(missing) == 2:
+                    return "Perfecto. ¿Tu email y teléfono?"
+                else:
+                    return f"Solo falta tu {missing[0]}."
             
-            return "¡Excelente! Ya tengo todos tus datos."
+            # 4. Si tenemos todo, mostrar calendario
+            if not self.collected_data['calendar_options_shown']:
+                service_type = self.collected_data.get('service_interest', 'IA empresarial')
+                return await self._handle_show_calendar_options({'service_type': service_type})
+            
+            return "¡Perfecto! Datos completos."
             
         except Exception as e:
             logger.error(f"Error handling extract_user_data: {e}")
-            return "Perfecto, continúo con el proceso de agendamiento."
+            return "Continúo con el proceso."
+    
+    async def _handle_check_budget(self, function_args: Dict) -> str:
+        """Manejar confirmación de presupuesto"""
+        try:
+            # Solo preguntar presupuesto si ya entendimos el requerimiento
+            if not self.collected_data['service_interest']:
+                return "Primero, ¿qué necesitas específicamente?"
+            
+            # Si ya confirmamos presupuesto, continuar
+            if self.collected_data['budget_confirmed']:
+                return "¡Perfecto! Tu presupuesto está confirmado."
+            
+            # Preguntar presupuesto de forma directa
+            return "¿Tienes presupuesto entre 2K-20K USD? 💰"
+            
+        except Exception as e:
+            logger.error(f"Error handling check_budget: {e}")
+            return "¿Cuál es tu presupuesto aproximado?"
     
     async def _handle_show_calendar_options(self, function_args: Dict) -> str:
         """Mostrar opciones de calendario disponibles"""
         try:
-            service_type = function_args.get('service_type', 'IA empresarial')
+            # Verificar que tenemos presupuesto confirmado antes de mostrar calendario
+            if not self.collected_data['budget_confirmed']:
+                return "Primero necesito confirmar tu presupuesto."
+            
+            service_type = function_args.get('service_type', 'tu proyecto')
             
             # Marcar que ya mostramos las opciones
             self.collected_data['calendar_options_shown'] = True
             
-            # Opciones de calendario fijas (se pueden hacer dinámicas con Microsoft Graph)
-            options_msg = f"¡Perfecto {self.collected_data['name']}! 🗓️\n\nTengo estos horarios disponibles para tu demo de {service_type}:\n\n*Opción 1:* Mañana 9:00 AM\n*Opción 2:* Mañana 10:00 AM\n*Opción 3:* Mañana 11:00 AM\n\n¿Cuál opción prefieres? Solo responde con el número (1, 2 o 3) 😊"
+            # Opciones directas y cortas
+            options_msg = f"¡Listo {self.collected_data['name']}!\n\n1. Mañana 9:00 AM\n2. Mañana 10:00 AM\n3. Mañana 11:00 AM\n\n¿Cuál opción? Solo el número 📅"
             
             return options_msg
             
         except Exception as e:
             logger.error(f"Error handling show_calendar_options: {e}")
-            return "Tengo horarios disponibles. ¿Te gustaría agendar una reunión?"
+            return "¿Mañana 10am está bien?"
     
     async def _handle_schedule_meeting(self, function_args: Dict) -> str:
         """Agendar reunión real usando Microsoft Graph"""
@@ -334,29 +385,35 @@ Responde al siguiente mensaje del cliente de manera natural y efectiva:"""
             self.collected_data['selected_time_slot'] = selected_time['display']
             self.collected_data['meeting_confirmed'] = True
             
-            # Agendar reunión real con Microsoft Graph
+            # Agendar reunión real con Microsoft Graph CON RESUMEN DETALLADO
             logger.info(f"🔧 Agendando reunión real con Microsoft Graph...")
             
-            meeting_result = await self.graph_client.create_meeting(
-                attendee_email=self.collected_data['email'],
-                meeting_date=selected_time['date'],
-                meeting_time=selected_time['time'],
-                contact_name=self.collected_data['name'],
-                company_name=self.collected_data.get('company', self.company_name),
-                meeting_type="discovery_call"
-            )
+            # Preparar datos completos para la reunión
+            meeting_data = {
+                'attendee_email': self.collected_data['email'],
+                'meeting_date': selected_time['date'],
+                'meeting_time': selected_time['time'],
+                'contact_name': self.collected_data['name'],
+                'company_name': self.collected_data.get('company', self.company_name),
+                'meeting_type': 'discovery_call',
+                # NUEVO: Datos adicionales para el resumen
+                'requirement': self.collected_data.get('service_interest', 'No especificado'),
+                'budget_range': self.collected_data.get('budget_range', 'Confirmado 2K-20K USD'),
+                'phone': self.collected_data.get('phone', 'No proporcionado')
+            }
+            
+            meeting_result = await self.graph_client.create_meeting_with_summary(**meeting_data)
             
             if meeting_result.get('meeting_scheduled'):
-                # Reunión agendada exitosamente
-                meeting_link = meeting_result.get('meeting_link', 'Se enviará por email')
-                confirmation_msg = f"¡Perfecto {self.collected_data['name']}! 🎉\n\n✅ Tu reunión ha sido agendada para {selected_time['display']}\n\n📧 Te envié la invitación a {self.collected_data['email']}\n🔗 Link de Teams: {meeting_link}\n\n¡Nos vemos pronto para mostrarte cómo TDX puede transformar tu empresa con IA!"
+                # Reunión agendada exitosamente - Respuesta DIRECTA
+                confirmation_msg = f"¡Perfecto {self.collected_data['name']}! 🎉\n\n✅ {selected_time['display']} confirmado\n📧 Invitación enviada\n\n¡Nos vemos!"
                 
                 logger.info(f"✅ Reunión agendada exitosamente para {self.collected_data['name']}")
                 return confirmation_msg
             else:
                 # Error al agendar, pero confirmar de todas formas
                 logger.warning(f"⚠️ Error agendando reunión real, pero confirmando al usuario")
-                return f"¡Perfecto {self.collected_data['name']}! 🎉\n\n✅ Tu reunión ha sido agendada para {selected_time['display']}\n\n📧 Te contactaremos pronto con los detalles\n\n¡Nos vemos para mostrarte cómo TDX puede transformar tu empresa con IA!"
+                return f"¡Perfecto {self.collected_data['name']}!\n\n✅ {selected_time['display']} confirmado\n📧 Te contactamos pronto\n\n¡Gracias!"
             
         except Exception as e:
             logger.error(f"❌ Error handling schedule_meeting: {e}")
@@ -372,13 +429,23 @@ Responde al siguiente mensaje del cliente de manera natural y efectiva:"""
             import asyncio
             return asyncio.run(self._handle_schedule_meeting({'option_selected': message_lower.strip()}))
         
-        # Respuestas básicas
+        # Respuestas directas y cortas
         if any(word in message_lower for word in ['hola', 'epale', 'buenas']):
-            return f"¡Hola {self.contact_name}! Soy Mati de TDX. ¿En qué podemos ayudarte con IA? 😊"
-        elif any(word in message_lower for word in ['ia', 'automatizacion', 'finanzas', 'chatbot']):
-            return f"¡Perfecto! En TDX somos expertos en IA empresarial. ¿Me das tu email y teléfono para agendar una demo?"
+            return f"¡Hola {self.contact_name}! ¿Qué necesitas?"
+        elif any(word in message_lower for word in ['presupuesto', 'precio', 'costo']):
+            if not self.collected_data['service_interest']:
+                return "¿Qué necesitas específicamente primero?"
+            else:
+                return "¿Tienes presupuesto 2K-20K USD?"
+        elif any(word in message_lower for word in ['si', 'sí', 'claro', 'perfecto']):
+            if not self.collected_data['budget_confirmed']:
+                return "¡Perfecto! ¿Tu email y teléfono?"
+            else:
+                return "¡Excelente! Continuemos."
+        elif any(word in message_lower for word in ['ia', 'automatizacion', 'chatbot', 'bot']):
+            return "¿Tienes presupuesto 2K-20K USD?"
         else:
-            return f"Interesante {self.contact_name}. ¿En qué área te gustaría implementar IA?"
+            return "¿Qué necesitas específicamente?"
     
     async def _send_to_chatwoot(self, message: str) -> bool:
         """Enviar respuesta a través de Chatwoot"""
