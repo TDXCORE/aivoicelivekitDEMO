@@ -63,6 +63,8 @@ class ChatInterface {
     }
     
     initializeElements() {
+        console.log('🔍 Initializing elements...');
+        
         // Main elements
         this.chatMessages = document.getElementById('chatMessages');
         this.messageInput = document.getElementById('messageInput');
@@ -85,13 +87,48 @@ class ChatInterface {
         
         // Toast container
         this.toastContainer = document.getElementById('toastContainer');
+        
+        // Log element availability
+        console.log('📋 Element check:', {
+            chatMessages: !!this.chatMessages,
+            messageInput: !!this.messageInput,
+            sendBtn: !!this.sendBtn,
+            sessionInfo: !!this.sessionInfo,
+            statusIndicator: !!this.statusIndicator
+        });
+        
+        // Check if critical elements are missing
+        if (!this.messageInput || !this.sendBtn) {
+            console.error('❌ Critical elements missing!', {
+                messageInput: !!this.messageInput,
+                sendBtn: !!this.sendBtn
+            });
+        }
     }
     
     bindEvents() {
         // Send message events
-        this.sendBtn.addEventListener('click', () => this.sendMessage());
+        console.log('🔗 Binding events to elements:', {
+            sendBtn: !!this.sendBtn,
+            messageInput: !!this.messageInput
+        });
+        
+        this.sendBtn.addEventListener('click', (e) => {
+            console.log('🖱️ Send button clicked', {
+                disabled: this.sendBtn.disabled,
+                isConnected: this.isConnected,
+                isTyping: this.isTyping
+            });
+            if (!this.sendBtn.disabled) {
+                this.sendMessage();
+            } else {
+                console.log('🚫 Send button is disabled, not sending message');
+            }
+        });
+        
         this.messageInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
+                console.log('⌨️ Enter key pressed, sending message');
                 e.preventDefault();
                 this.sendMessage();
             }
@@ -136,14 +173,17 @@ class ChatInterface {
     
     async checkStatus() {
         try {
+            console.log('Checking status at:', `${this.apiBaseUrl}/status`);
             const response = await fetch(`${this.apiBaseUrl}/status`);
             const data = await response.json();
+            console.log('Status response:', data);
             
             if (data.success) {
                 this.isConnected = true;
                 this.sessionId = data.session_id;
                 this.updateSessionInfo(data);
                 this.updateStatusIndicator('connected', 'Conectado');
+                console.log('Connection established successfully');
                 
                 if (data.test_summary) {
                     this.showToast('Sesión de prueba cargada', 'success');
@@ -192,12 +232,38 @@ class ChatInterface {
     
     updateSendButton() {
         const hasText = this.messageInput.value.trim().length > 0;
-        this.sendBtn.disabled = !hasText || this.isTyping || !this.isConnected;
+        const shouldDisable = !hasText || this.isTyping || !this.isConnected;
+        this.sendBtn.disabled = shouldDisable;
+        
+        console.log('🔘 Send button update:', {
+            hasText,
+            isTyping: this.isTyping,
+            isConnected: this.isConnected,
+            disabled: shouldDisable
+        });
     }
     
     async sendMessage() {
         const message = this.messageInput.value.trim();
-        if (!message || this.isTyping || !this.isConnected) return;
+        console.log('🚀 sendMessage called with:', { message, isTyping: this.isTyping, isConnected: this.isConnected });
+        
+        if (!message || this.isTyping) {
+            console.log('❌ sendMessage blocked:', { hasMessage: !!message, isTyping: this.isTyping });
+            return;
+        }
+        
+        // Force connection check if not connected
+        if (!this.isConnected) {
+            console.log('🔄 Not connected, checking status...');
+            await this.checkStatus();
+            if (!this.isConnected) {
+                console.log('❌ Still not connected after status check');
+                this.showToast('Error de conexión - verificando estado...', 'warning');
+                return;
+            }
+        }
+        
+        console.log('✅ Proceeding to send message:', message);
         
         // Add user message to chat
         this.addMessage(message, 'user');
@@ -210,7 +276,11 @@ class ChatInterface {
         this.showTyping();
         
         try {
-            const response = await fetch(`${this.apiBaseUrl}/chat`, {
+            const fetchUrl = `${this.apiBaseUrl}/chat`;
+            console.log('📤 Making fetch request to:', fetchUrl);
+            console.log('📤 Request body:', JSON.stringify({ message }));
+            
+            const response = await fetch(fetchUrl, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -218,19 +288,30 @@ class ChatInterface {
                 body: JSON.stringify({ message })
             });
             
+            console.log('📥 Response status:', response.status, response.statusText);
+            console.log('📥 Response headers:', Object.fromEntries(response.headers.entries()));
+            
             const data = await response.json();
+            console.log('📥 Response data:', data);
             
             this.hideTyping();
             
             if (data.success && data.response) {
+                console.log('✅ Success response, adding bot message');
                 this.addMessage(data.response, 'bot');
                 this.sessionId = data.session_id;
             } else {
+                console.log('❌ Error in response data:', data);
                 this.addMessage(data.error || 'Error procesando mensaje', 'error');
                 this.showToast('Error enviando mensaje', 'error');
             }
         } catch (error) {
-            console.error('Error sending message:', error);
+            console.error('❌ Fetch error:', error);
+            console.error('❌ Error details:', {
+                name: error.name,
+                message: error.message,
+                stack: error.stack
+            });
             this.hideTyping();
             this.addMessage('Error de conexión', 'error');
             this.showToast('Error de conexión', 'error');
@@ -548,8 +629,9 @@ class ChatInterface {
 // Initialize the chat interface when the page loads
 let chatInterface;
 document.addEventListener('DOMContentLoaded', () => {
+    console.log('🎯 DOMContentLoaded - Initializing chat interface');
     chatInterface = new ChatInterface();
+    // Make chatInterface globally available for button clicks after initialization
+    window.chatInterface = chatInterface;
+    console.log('✅ Chat interface initialized and made globally available');
 });
-
-// Make chatInterface globally available for button clicks
-window.chatInterface = chatInterface;
