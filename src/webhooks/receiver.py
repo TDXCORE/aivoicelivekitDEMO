@@ -42,6 +42,20 @@ app = FastAPI(
     version="1.0.0"
 )
 
+# Integrar sistema de testing (seguro y aislado)
+TESTING_ENABLED = os.getenv("TESTING_ENABLED", "true").lower() == "true"
+logger.info(f"Testing system enabled: {TESTING_ENABLED}")
+
+if TESTING_ENABLED:
+    try:
+        from src.core.testing_integration import integrate_testing_system
+        integrate_testing_system(app)
+    except ImportError as e:
+        logger.warning(f"⚠️ Testing system not available: {e}")
+    except Exception as e:
+        logger.error(f"❌ Error loading testing system: {e}")
+        logger.info("✅ Production system unaffected")
+
 # Token de seguridad para webhooks
 WEBHOOK_TOKEN = os.getenv("CHATWOOT_WEBHOOK_TOKEN", "default-secure-token-change-me")
 

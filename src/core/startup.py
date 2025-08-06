@@ -36,6 +36,7 @@ def start_webhook_receiver():
     logger.info(f"🔗 Starting Chatwoot Webhook Receiver on {host}:{port}")
     logger.info(f"📋 Environment: {os.getenv('RENDER', 'production')}")
     logger.info(f"🔑 Token configured: {'Yes' if os.getenv('CHATWOOT_WEBHOOK_TOKEN') else 'No'}")
+    logger.info(f"🧪 Testing system enabled: {'Yes' if os.getenv('TESTING_ENABLED', 'true').lower() == 'true' else 'No'}")
     
     # Ejecutar webhook receiver
     uvicorn.run(

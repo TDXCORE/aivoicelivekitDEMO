@@ -14,7 +14,8 @@
       "Bash(mv:*)",
       "Bash(touch:*)",
       "WebFetch(domain:medium.com)",
-      "WebFetch(domain:platform.openai.com)"
+      "WebFetch(domain:platform.openai.com)",
+      "Bash(set TESTING_ENABLED=true)"
     ],
     "deny": []
   }

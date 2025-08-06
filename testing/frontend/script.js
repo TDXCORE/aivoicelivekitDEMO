@@ -2,15 +2,64 @@
 
 class ChatInterface {
     constructor() {
-        this.apiBaseUrl = '/api/test';
+        // Auto-detect API base URL based on current path
+        this.apiBaseUrl = this.detectApiBaseUrl();
         this.sessionId = null;
         this.isConnected = false;
         this.isTyping = false;
         
         this.initializeElements();
         this.bindEvents();
+        this.updateEnvironmentInfo();
         this.checkStatus();
         this.setupAutoResize();
+        
+        // Log detected configuration
+        console.log('TDX Chatbot Interface initialized');
+        console.log('API Base URL:', this.apiBaseUrl);
+        console.log('Current Path:', window.location.pathname);
+    }
+    
+    detectApiBaseUrl() {
+        /**
+         * Auto-detect the correct API base URL based on current location
+         * - If running at /testing/, use /testing/api/test
+         * - If running standalone, use /api/test
+         */
+        const currentPath = window.location.pathname;
+        
+        if (currentPath.startsWith('/testing')) {
+            // Integrated mode: running at https://domain.com/testing/
+            return '/testing/api/test';
+        } else {
+            // Standalone mode: running at https://domain.com/ (main_test.py server)
+            return '/api/test';
+        }
+    }
+    
+    updateEnvironmentInfo() {
+        /**
+         * Update page title and info based on detected environment
+         */
+        const currentPath = window.location.pathname;
+        const isIntegratedMode = currentPath.startsWith('/testing');
+        
+        // Update page elements to show environment
+        const headerTitle = document.querySelector('.header-info h1');
+        const sessionInfo = document.getElementById('sessionInfo');
+        
+        if (headerTitle) {
+            if (isIntegratedMode) {
+                headerTitle.textContent = 'TDX Chatbot Test (Integrated)';
+            } else {
+                headerTitle.textContent = 'TDX Chatbot Test (Standalone)';
+            }
+        }
+        
+        if (sessionInfo && !this.sessionId) {
+            const mode = isIntegratedMode ? 'Integrated Mode' : 'Standalone Mode';
+            sessionInfo.textContent = `${mode} - Iniciando...`;
+        }
     }
     
     initializeElements() {
