@@ -1,0 +1,53 @@
+services:
+  - type: web
+    name: aivoicelivekitdemo-testing
+    env: python
+    plan: starter
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -r requirements.txt
+      python -c "from msgraph import GraphServiceClient; from azure.identity import ClientSecretCredential; print('✅ Microsoft Graph SDK installation verified')"
+      python -c "import aiohttp, openai; print('✅ WhatsApp dependencies verified')"
+      python -c "import testing; print('✅ Testing module verified')"
+      python -c "from testing.test_integration import TestAgentWrapper; print('✅ Test integration verified')"
+    startCommand: python main_test.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.0
+      - key: PIP_NO_CACHE_DIR
+        value: 1
+      - key: RENDER
+        value: production
+      - key: TESTING_ENABLED
+        value: true
+      - key: WHATSAPP_BOT_ENABLED
+        value: true
+      # OpenAI Configuration (REQUIRED for testing functionality)
+      - key: OPENAI_API_KEY
+        sync: false
+      # Chatwoot Configuration (for agent wrapper functionality)
+      - key: VITE_CHATWOOT_ACCOUNT_ID
+        sync: false
+      - key: VITE_CHATWOOT_API_TOKEN
+        sync: false
+      - key: VITE_CHATWOOT_INBOX_ID
+        sync: false
+      - key: CHATWOOT_WEBHOOK_TOKEN
+        value: test-webhook-token-secure
+      - key: CHATWOOT_BOT_AGENT_ID
+        sync: false
+      # Microsoft Graph Configuration (optional - will use mock data if not provided)
+      - key: MICROSOFT_GRAPH_CLIENT_ID
+        sync: false
+      - key: MICROSOFT_GRAPH_CLIENT_SECRET
+        sync: false
+      - key: MICROSOFT_GRAPH_TENANT_ID
+        sync: false
+      - key: USER_EMAIL
+        value: ventas@tdxcore.com
+      # Testing-specific configuration
+      - key: TESTING_SESSION_TIMEOUT
+        value: 3600
+      - key: MAX_TEST_SESSIONS
+        value: 10
+    healthCheckPath: /api/test/health
