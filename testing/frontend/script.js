@@ -360,10 +360,10 @@ class ChatInterface {
     formatMessage(content) {
         // Basic formatting for better readability
         return content
-            .replace(/\\n/g, '<br>')
-            .replace(/\\*\\*(.*?)\\*\\*/g, '<strong>$1</strong>')
-            .replace(/\\*(.*?)\\*/g, '<em>$1</em>')
-            .replace(/(https?:\\/\\/[^\\s]+)/g, '<a href=\"$1\" target=\"_blank\">$1</a>');
+            .replace(/\n/g, '<br>')
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*(.*?)\*/g, '<em>$1</em>')
+            .replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank">$1</a>');
     }
     
     showTyping() {
