@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TDX Chatbot - Test Interface</title>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css" id="main-stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
 </head>
 <body>
@@ -126,6 +126,30 @@
     <!-- Toast Notifications -->
     <div class="toast-container" id="toastContainer"></div>
 
-    <script src="script.js"></script>
+    <script>
+        // Auto-detect and fix resource paths based on current location
+        (function() {
+            const currentPath = window.location.pathname;
+            const isIntegratedMode = currentPath.startsWith('/testing');
+            
+            if (isIntegratedMode) {
+                // Update CSS path for integrated mode
+                const stylesheet = document.getElementById('main-stylesheet');
+                if (stylesheet) {
+                    stylesheet.href = '/testing/static/style.css';
+                }
+                
+                // Load script with correct path
+                const script = document.createElement('script');
+                script.src = '/testing/static/script.js';
+                document.body.appendChild(script);
+            } else {
+                // Load script with relative path for standalone mode
+                const script = document.createElement('script');
+                script.src = 'script.js';
+                document.body.appendChild(script);
+            }
+        })();
+    </script>
 </body>
 </html>
