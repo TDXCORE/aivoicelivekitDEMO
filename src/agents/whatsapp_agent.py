@@ -108,6 +108,11 @@ class TDXWhatsAppAgentClean:
     async def _generate_openai_response(self, message: str) -> str:
         """Generar respuesta usando OpenAI con conversation state management"""
         try:
+            # FILTRO DE TEMAS: Verificar si el mensaje está relacionado con ventas/servicios TDX
+            if not self._is_sales_related_topic(message):
+                logger.info(f"🚫 TEMA NO RELACIONADO detectado: {message[:30]}...")
+                return "Disculpa, solo ayudo con servicios TDX. ¿Te interesa algún proyecto de IA o desarrollo web?"
+            
             # SIEMPRE intentar usar OpenAI primero
             if not self.openai_client:
                 logger.warning("OpenAI not configured, attempting to initialize...")
@@ -297,6 +302,83 @@ class TDXWhatsAppAgentClean:
         logger.info(f"📝 CONVERSATION CONTEXT: {len(messages)} mensajes en historial")
         return messages
     
+    def _is_sales_related_topic(self, message: str) -> bool:
+        """Detecta si el mensaje está relacionado con ventas/servicios TDX"""
+        
+        # Temas permitidos (ventas y servicios TDX)
+        sales_keywords = [
+            'chatbot', 'bot', 'ia', 'ai', 'automatizar', 'automatización', 'web', 'página',
+            'servicio', 'proyecto', 'presupuesto', 'reunión', 'cita', 'precio', 'costo',
+            'desarrollo', 'software', 'app', 'solución', 'sistema', 'plataforma',
+            'ecommerce', 'tienda', 'negocio', 'empresa', 'ventas', 'clientes',
+            'mvp', 'prototipo', 'seo', 'marketing', 'whatsapp', 'video', 'avatar'
+        ]
+        
+        # Temas NO permitidos (off-topic)
+        off_topic_keywords = [
+            'clima', 'tiempo', 'noticias', 'deportes', 'política', 'fútbol',
+            'recetas', 'cocina', 'medicina personal', 'salud personal', 'horóscopo',
+            'astrología', 'chistes', 'entretenimiento', 'música', 'películas',
+            'turismo', 'viajes', 'restaurantes', 'comida'
+        ]
+        
+        message_lower = message.lower()
+        
+        # Si contiene palabras off-topic y NO contiene sales keywords
+        has_off_topic = any(keyword in message_lower for keyword in off_topic_keywords)
+        has_sales_topic = any(keyword in message_lower for keyword in sales_keywords)
+        
+        # Si es claramente off-topic y no menciona nada de ventas
+        if has_off_topic and not has_sales_topic:
+            return False
+        
+        return True
+    
+    def _detect_service_type(self, service_interest: str) -> str:
+        """Detecta el tipo de servicio basado en el interés del usuario"""
+        if not service_interest:
+            return "AI_CHATBOT"  # Default
+        
+        service_lower = service_interest.lower()
+        
+        # Mapeo de palabras clave a tipos de servicio
+        service_mapping = {
+            'AI_CHATBOT': ['chatbot', 'bot', 'chat', 'atención', 'soporte', 'faq'],
+            'AI_VOICE': ['voz', 'llamadas', 'telefónico', 'voice', 'audio'],
+            'AI_ASSISTANT_WHATSAPP': ['whatsapp', 'wa', 'mensajería', 'chat whatsapp'],
+            'AI_VIDEO': ['video', 'avatar', 'virtual', 'presentación'],
+            'WEB_STARTER': ['página', 'web básica', 'sitio simple', 'vitrina'],
+            'WEB_BUSINESS': ['web', 'página web', 'sitio web', 'website'],
+            'WEB_ECOMMERCE': ['ecommerce', 'tienda', 'ventas online', 'e-commerce'],
+            'MVP': ['mvp', 'prototipo', 'demo', 'piloto'],
+            'WHATSAPP_API': ['api whatsapp', 'integración whatsapp'],
+            'SEO': ['seo', 'posicionamiento', 'google', 'búsquedas']
+        }
+        
+        # Buscar coincidencias
+        for service_type, keywords in service_mapping.items():
+            if any(keyword in service_lower for keyword in keywords):
+                return service_type
+        
+        return "AI_CHATBOT"  # Default si no encuentra coincidencia
+    
+    def _get_service_context(self) -> str:
+        """Obtener contexto específico del servicio detectado"""
+        if not self.collected_data.get('service_interest'):
+            return ""
+        
+        service_type = self._detect_service_type(self.collected_data['service_interest'])
+        
+        if service_type in self.service_cases:
+            service_info = self.service_cases[service_type].get('general', {})
+            snippet = service_info.get('snippet', '')
+            roi = service_info.get('roi', '')
+            
+            if snippet:
+                return f"SERVICIO DETECTADO: {service_type}\nRESPUESTA ESPECÍFICA: {snippet}\nROI: {roi}"
+        
+        return ""
+    
     def _build_dynamic_system_prompt(self) -> str:
         """Construir system prompt dinámico basado en estado actual"""
         # Estado de progreso para evitar repeticiones
@@ -322,6 +404,9 @@ class TDXWhatsAppAgentClean:
         else:
             budget_status = "PRESUPUESTO: Pendiente de confirmar"
         
+        # Contexto específico del servicio
+        service_context = self._get_service_context()
+        
         system_prompt = f"""Eres Mati, asistente de TDX. CRITICAL: Esta es una conversación CONTINUA, NO inicial.
 
 DATOS YA CAPTURADOS:
@@ -330,19 +415,35 @@ DATOS YA CAPTURADOS:
 ESTADO DE PRESUPUESTO:
 {budget_status}
 
+{service_context}
+
 SIGUIENTE PASO REQUERIDO:
 {next_step}
+
+ESTILO DE COMUNICACIÓN OBLIGATORIO:
+- Máximo 10 palabras por frase
+- Natural y conversacional
+- Sin emojis excesivos (máximo 1 por mensaje)
+- Directo al punto
+- Empático pero eficiente
+
+EJEMPLOS DE ESTILO:
+❌ "¡Perfecto! Los servicios de IA son una excelente solución para automatizar procesos."
+✅ "Perfecto. ¿Cuántos usuarios atenderá?"
+
+❌ "Excelente. Para coordinar la reunión, ¿me das tu email?"
+✅ "Genial. ¿Tu email?"
 
 REGLAS CRÍTICAS DE FLUJO:
 - DETECTAR REQUERIMIENTO: Si usuario menciona cualquiera de estas palabras: "servicios de ai", "servicios de ia", "chatbot", "bot", "ia", "automatizar", "automatización", "soluciones", "proyecto" -> INMEDIATAMENTE usar extract_user_data para capturar service_interest
 - PREGUNTA DE PRESUPUESTO: Cuando captures service_interest y NO tengas presupuesto confirmado -> PREGUNTAR EXACTAMENTE:
-  "¿Tienes disponible el presupuesto de 2.000 USD a 20.000 USD para este proyecto?
+  "¿Tienes presupuesto 2K-20K USD?
 
-  1️⃣ Sí, tengo el presupuesto
-  2️⃣ Sí, pero para hacer pagos en partes  
-  3️⃣ No, pero me interesa escuchar la oferta
+  1️⃣ Sí, tengo presupuesto
+  2️⃣ Sí, pagos en partes  
+  3️⃣ No, pero me interesa
 
-  Solo responde con el número de tu opción."
+  Solo el número."
 - PROCESAR OPCIONES: Si usuario responde "1", "2", o "3" -> USAR extract_user_data con budget_option_selected
 - FLUJO CONTINUO: TODAS las opciones de presupuesto (1, 2, 3) continúan el flujo hacia la reunión
 - PROHIBIDO: NUNCA termines conversación por presupuesto, NUNCA preguntes presupuesto genérico
@@ -353,7 +454,11 @@ REGLAS ANTI-REPETICIÓN:
 - CONTINÚA desde donde se quedó la conversación
 - NO reinicies el flujo ni hagas preguntas repetidas
 
-PERSONALIDAD: Empático, natural, directo. Máximo 1 emoji por mensaje."""
+FILTRO DE TEMAS:
+- SOLO responder temas relacionados con servicios TDX
+- Si pregunta sobre clima, deportes, noticias, etc. -> "Disculpa, solo ayudo con servicios TDX. ¿Te interesa algún proyecto?"
+
+PERSONALIDAD: Empático, natural, directo. Respuestas breves y efectivas."""
         
         return system_prompt
     
@@ -477,9 +582,40 @@ PERSONALIDAD: Empático, natural, directo. Máximo 1 emoji por mensaje."""
             # FLUJO INTELIGENTE - VERIFICAR ESTADO COMPLETO DESPUÉS DE CADA ACTUALIZACIÓN
             logger.info(f"🔍 Estado actual: email={bool(self.collected_data['email'])}, phone={bool(self.collected_data['phone'])}, service={bool(self.collected_data['service_interest'])}, budget={self.collected_data['budget_confirmed']}")
             
-            # 1. Si acabamos de capturar requerimiento y no tenemos presupuesto -> preguntar presupuesto específico
+            # 1. Si acabamos de capturar requerimiento -> usar base de conocimiento y calificar
             if 'service_interest' in updated_fields and not self.collected_data['budget_confirmed']:
-                return f"Perfecto, {self.collected_data['service_interest']} es una excelente solución.\n\n¿Tienes disponible el presupuesto de 2.000 USD a 20.000 USD para este proyecto?\n\n1️⃣ Sí, tengo el presupuesto\n2️⃣ Sí, pero para hacer pagos en partes\n3️⃣ No, pero me interesa escuchar la oferta\n\nSolo responde con el número de tu opción."
+                service_type = self._detect_service_type(self.collected_data['service_interest'])
+                
+                # Marcar que necesitamos capturar volumen/alcance
+                self.collected_data['volume_asked'] = True
+                
+                # Usar snippet específico de la base de conocimiento
+                if service_type in self.service_cases:
+                    service_info = self.service_cases[service_type].get('general', {})
+                    snippet = service_info.get('snippet', '')
+                    
+                    if snippet:
+                        # Respuesta específica con calificación
+                        if service_type == 'AI_CHATBOT':
+                            return f"¡Perfecto! {snippet}\n\n¿Cuántos usuarios atenderá?"
+                        elif service_type == 'WEB_BUSINESS':
+                            return f"¡Genial! {snippet}\n\n¿Qué tipo de negocio?"
+                        elif service_type == 'AI_VOICE':
+                            return f"¡Excelente! {snippet}\n\n¿Cuántas llamadas diarias?"
+                        else:
+                            return f"¡Perfecto! {snippet}\n\n¿Cuál es el alcance?"
+                
+                # Fallback si no hay snippet específico
+                return f"Perfecto. ¿Cuál es el alcance?"
+            
+            # 1.5. Si ya preguntamos volumen/alcance y usuario responde -> proceder a presupuesto
+            if (self.collected_data.get('volume_asked') and 
+                not self.collected_data.get('budget_confirmed') and 
+                not self.collected_data.get('budget_declined') and
+                'service_interest' not in updated_fields):  # No es la primera captura de servicio
+                
+                # Proceder directamente a pregunta de presupuesto
+                return f"¿Tienes presupuesto 2K-20K USD?\n\n1️⃣ Sí, tengo presupuesto\n2️⃣ Sí, pagos en partes\n3️⃣ No, pero me interesa\n\nSolo el número."
             
             # 2. Si acabamos de confirmar presupuesto (cualquier opción) -> pedir datos faltantes
             if ('budget_range' in updated_fields or 'budget_option_selected' in updated_fields) and self.collected_data['budget_confirmed']:
@@ -551,37 +687,30 @@ PERSONALIDAD: Empático, natural, directo. Máximo 1 emoji por mensaje."""
             
             logger.info(f"🔍 Obteniendo horarios disponibles REALES para {self.collected_data['name']}")
             
-            # NUEVO: Obtener horarios disponibles reales del calendario
+            # NUEVO: Obtener horarios disponibles reales del calendario SIEMPRE
             available_slots = await self.graph_client.get_real_available_slots(max_slots=3)
             
-            if available_slots and len(available_slots) >= 3:
+            if not available_slots:
+                # Si falla completamente, usar business hours como fallback
+                logger.warning("⚠️ No se pudieron obtener horarios reales, usando business hours")
+                available_slots = self.graph_client._get_business_hours_availability(3)
+            
+            if available_slots and len(available_slots) >= 1:
                 # Guardar las opciones para referencia posterior
                 self.collected_data['available_slots'] = available_slots
                 
-                # Formatear opciones para WhatsApp
-                options_msg = f"¡Listo {self.collected_data['name']}!\n\n"
+                # Formatear opciones para WhatsApp con estilo natural y breve
+                options_msg = f"¡Listo!\n\n"
                 for i, slot in enumerate(available_slots[:3], 1):
                     options_msg += f"{i}. {slot['formatted']}\n"
-                options_msg += "\n¿Cuál opción? Solo el número 📅"
+                options_msg += "\n¿Cuál? Solo el número 📅"
                 
-                logger.info(f"✅ Mostrando {len(available_slots)} horarios reales disponibles")
+                logger.info(f"✅ Mostrando {len(available_slots)} horarios disponibles")
                 return options_msg
             else:
-                # Fallback si no hay suficientes slots disponibles
-                logger.warning("⚠️ No se encontraron suficientes horarios disponibles, usando fallback")
-                fallback_slots = [
-                    {"date": "2025-08-06", "time": "09:00 AM", "formatted": "Mañana 9:00 AM"},
-                    {"date": "2025-08-06", "time": "10:00 AM", "formatted": "Mañana 10:00 AM"},
-                    {"date": "2025-08-06", "time": "11:00 AM", "formatted": "Mañana 11:00 AM"}
-                ]
-                self.collected_data['available_slots'] = fallback_slots
-                
-                options_msg = f"¡Listo {self.collected_data['name']}!\n\n"
-                for i, slot in enumerate(fallback_slots, 1):
-                    options_msg += f"{i}. {slot['formatted']}\n"
-                options_msg += "\n¿Cuál opción? Solo el número 📅"
-                
-                return options_msg
+                # Fallback de emergencia solo si todo falla
+                logger.error("❌ Error completo obteniendo horarios, usando fallback de emergencia")
+                return "¿Mañana 10am está bien?"
             
         except Exception as e:
             logger.error(f"Error handling show_calendar_options: {e}")

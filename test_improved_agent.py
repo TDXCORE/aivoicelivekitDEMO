@@ -1,105 +1,73 @@
-#!/usr/bin/env python3
 """
-Test para verificar las mejoras del agente WhatsApp:
-- Flujo directo y empático
-- Máximo 6-10 palabras por frase
-- Flujo correcto: requerimiento → presupuesto → datos → reunión
-- Resumen detallado en invitación
+Test simple para verificar las mejoras del agente WhatsApp
 """
-
 import asyncio
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from src.agents.whatsapp_agent import TDXWhatsAppAgentClean
+# Add the src directory to the Python path
+sys.path.append('src')
 
-async def test_improved_flow():
-    """Test del flujo mejorado completo"""
-    print("TESTING IMPROVED WHATSAPP AGENT")
-    print("=" * 60)
-    
-    # Inicializar agente
-    agent = TDXWhatsAppAgentClean(
-        contact_name="Emma Castillo",
-        company_name="Marketing Pro",
-        prospect_info={},
-        conversation_id=12345
-    )
-    
-    # Test conversación simulada paso a paso
-    test_messages = [
-        "Necesito un bot para ventas 24/7",  # 1. Requerimiento
-        "Si",  # 2. Confirmar presupuesto
-        "Emma Castillo eamc081908@gmail.com",  # 3. Datos
-        "54362329",  # 4. Teléfono
-        "1"  # 5. Seleccionar horario
-    ]
-    
-    for i, message in enumerate(test_messages, 1):
-        print(f"\n--- PASO {i} ---")
-        print(f"Usuario: {message}")
-        
-        try:
-            response = await agent.process_message(message)
-            print(f"Mati: {response}")
-            
-            # Verificar estado después de cada mensaje
-            print(f"Estado: {agent.collected_data}")
-            
-        except Exception as e:
-            print(f"Error: {e}")
-            import traceback
-            traceback.print_exc()
-    
-    print("\n" + "=" * 60)
-    print("TEST COMPLETADO")
-    
-    # Verificar que se completó el flujo
-    final_state = agent.collected_data
-    print(f"\nESTADO FINAL:")
-    print(f"- Requerimiento: {final_state.get('service_interest')}")
-    print(f"- Presupuesto confirmado: {final_state.get('budget_confirmed')}")
-    print(f"- Email: {final_state.get('email')}")
-    print(f"- Teléfono: {final_state.get('phone')}")
-    print(f"- Reunión confirmada: {final_state.get('meeting_confirmed')}")
+from testing.test_integration import TestAgentWrapper
 
-async def test_direct_responses():
-    """Test de respuestas directas (6-10 palabras)"""
-    print("\nTESTING DIRECT RESPONSES")
-    print("=" * 40)
+async def test_improved_agent():
+    print('TESTING AGENTE MEJORADO')
+    print('=' * 50)
     
-    agent = TDXWhatsAppAgentClean(
-        contact_name="Test User",
-        company_name="Test Company",
-        prospect_info={},
-        conversation_id=99999
-    )
+    # Crear wrapper de testing
+    agent = TestAgentWrapper('TestUser', 'Test Company')
     
-    # Test mensajes específicos
-    test_cases = [
-        "Hola",
-        "Necesito automatización",
-        "¿Cuánto cuesta?",
-        "Si tengo presupuesto",
-        "test@email.com"
-    ]
+    # Test 1: Filtro de temas no relacionados
+    print('\nTEST 1: Filtro de temas no relacionados')
+    response = await agent.send_message('Como esta el clima hoy?')
+    print(f'Usuario: Como esta el clima hoy?')
+    print(f'Bot: {response}')
     
-    for message in test_cases:
-        print(f"\nUsuario: {message}")
-        try:
-            response = await agent.process_message(message)
-            word_count = len(response.split())
-            print(f"Mati: {response}")
-            print(f"Palabras: {word_count} {'OK' if word_count <= 10 else 'DEMASIADO LARGO'}")
-        except Exception as e:
-            print(f"Error: {e}")
+    # Reset para test limpio
+    agent.reset_conversation()
+    
+    # Test 2: Flujo completo con base de conocimiento
+    print('\nTEST 2: Flujo con base de conocimiento')
+    
+    # Paso 1: Solicitar servicio
+    response = await agent.send_message('Necesito servicios de ai')
+    print(f'Usuario: Necesito servicios de ai')
+    print(f'Bot: {response}')
+    
+    # Paso 2: Responder volumen
+    response = await agent.send_message('Como 100 usuarios')
+    print(f'Usuario: Como 100 usuarios')
+    print(f'Bot: {response}')
+    
+    # Paso 3: Confirmar presupuesto
+    response = await agent.send_message('1')
+    print(f'Usuario: 1')
+    print(f'Bot: {response}')
+    
+    # Paso 4: Proporcionar email
+    response = await agent.send_message('test@example.com')
+    print(f'Usuario: test@example.com')
+    print(f'Bot: {response}')
+    
+    # Paso 5: Proporcionar telefono
+    response = await agent.send_message('3153041548')
+    print(f'Usuario: 3153041548')
+    print(f'Bot: {response}')
+    
+    # Paso 6: Seleccionar horario
+    response = await agent.send_message('1')
+    print(f'Usuario: 1')
+    print(f'Bot: {response}')
+    
+    # Mostrar resumen final
+    print('\nRESUMEN DEL TEST:')
+    summary = agent.get_test_summary()
+    print(f'Duracion: {summary["duration"]}')
+    print(f'Mensajes totales: {summary["message_count"]}')
+    print(f'Etapa final: {summary["conversation_stage"]}')
+    print(f'Datos recopilados: {summary["data_collection_progress"]}')
+    
+    print('\nTEST COMPLETADO')
 
 if __name__ == "__main__":
-    # Test completo
-    asyncio.run(test_improved_flow())
-    
-    # Test respuestas directas
-    asyncio.run(test_direct_responses())
-    
-    print("\nALL TESTS COMPLETED!")
+    asyncio.run(test_improved_agent())
