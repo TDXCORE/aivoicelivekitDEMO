@@ -628,10 +628,19 @@ class ChatInterface {
 
 // Initialize the chat interface when the page loads
 let chatInterface;
-document.addEventListener('DOMContentLoaded', () => {
-    console.log('🎯 DOMContentLoaded - Initializing chat interface');
+
+function initializeChatInterface() {
+    console.log('🎯 Initializing chat interface');
     chatInterface = new ChatInterface();
     // Make chatInterface globally available for button clicks after initialization
     window.chatInterface = chatInterface;
     console.log('✅ Chat interface initialized and made globally available');
-});
+}
+
+// Check if DOM is already loaded or wait for it
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initializeChatInterface);
+} else {
+    // DOM is already loaded, initialize immediately
+    initializeChatInterface();
+}
