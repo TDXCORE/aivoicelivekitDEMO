@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TDX Chatbot - Test Interface</title>
-    <link rel="stylesheet" href="style.css" id="main-stylesheet">
+    <link rel="stylesheet" href="" id="main-stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
 </head>
 <body>
@@ -129,25 +129,41 @@
     <script>
         // Auto-detect and fix resource paths based on current location
         (function() {
+            console.log('🔧 Path detection script running...');
             const currentPath = window.location.pathname;
             const isIntegratedMode = currentPath.startsWith('/testing');
             
-            if (isIntegratedMode) {
-                // Update CSS path for integrated mode
-                const stylesheet = document.getElementById('main-stylesheet');
-                if (stylesheet) {
+            console.log('📍 Current path:', currentPath);
+            console.log('🏷️ Integrated mode:', isIntegratedMode);
+            
+            // Set CSS path immediately
+            const stylesheet = document.getElementById('main-stylesheet');
+            if (stylesheet) {
+                if (isIntegratedMode) {
                     stylesheet.href = '/testing/static/style.css';
+                    console.log('✅ CSS path set to:', stylesheet.href);
+                } else {
+                    stylesheet.href = 'style.css';
+                    console.log('✅ CSS path set to:', stylesheet.href);
                 }
-                
-                // Load script with correct path
+            }
+            
+            if (isIntegratedMode) {
+                // Load script with correct path for integrated mode
                 const script = document.createElement('script');
                 script.src = '/testing/static/script.js';
+                script.onload = () => console.log('✅ Script loaded successfully');
+                script.onerror = (e) => console.error('❌ Script failed to load:', e);
                 document.body.appendChild(script);
+                console.log('📜 Loading script from:', script.src);
             } else {
                 // Load script with relative path for standalone mode
                 const script = document.createElement('script');
                 script.src = 'script.js';
+                script.onload = () => console.log('✅ Script loaded successfully');
+                script.onerror = (e) => console.error('❌ Script failed to load:', e);
                 document.body.appendChild(script);
+                console.log('📜 Loading script from:', script.src);
             }
         })();
     </script>
